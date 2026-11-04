@@ -74,52 +74,68 @@ function section(text, startRe, endRes) {
   return text.slice(m, end);
 }
 
-// Counter matchup entries, e.g. "Mauga Mauga Tank Wins the 1v1 +14.1 ≈ +13% High"
-export function parseCounterEntries(text, names) {
-  const re = new RegExp('(?<![\\p{L}\\d])(?<n>' + nameAlt(names) + ')(?: \\k<n>)? ' + ROLE +
-    '(?: (?<l>Wins the 1v1|Team pressure|Mixed threat))? ?(?<r>[+\\-−]\\d+(?:\\.\\d+)?)', 'gu');
+// ---- Counterwatch: every entry is a link to a hero page, so read the links ----
+function heroAnchors(html) {
   const out = [];
-  for (const m of text.matchAll(re)) out.push({ name: m.groups.n, r: parseFloat(m.groups.r.replace('−', '-')), l: LABEL[m.groups.l] || null });
+  const re = /<a\b[^>]*?href=["']?(?:https?:\/\/[^"'\s>]*)?\/stats\/overwatch\/heroes\/([a-z0-9-]+)["']?[^>]*>([\s\S]*?)<\/a>/gi;
+  for (const m of html.matchAll(re)) out.push({ slug: m[1], text: flat(m[2]) });
   return out;
 }
-// Duo entries, e.g. "Torbjörn Torbjörn Damage 58.2% High"
-export function parseDuos(text, names) {
-  const re = new RegExp('(?<![\\p{L}\\d])(?<n>' + nameAlt(names) + ')(?: \\k<n>)? ' + ROLE + ' (?<w>\\d{2}(?:\\.\\d+)?)%', 'gu');
-  return [...text.matchAll(re)].map(m => ({ name: m.groups.n, w: parseFloat(m.groups.w) }));
+const SIGNED = /(?:^|\s)([+\-−]\d+(?:\.\d+)?)(?![\d.])/;
+// Counter page: every hero ranked against the target. Positive = that hero counters the target, negative = target beats it.
+export function parseCountersPage(html, selfSlug) {
+  const seen = new Set(), out = [];
+  for (const a of heroAnchors(html)) {
+    if (a.slug === selfSlug || seen.has(a.slug)) continue;
+    const m = a.text.match(SIGNED);
+    if (!m) continue;
+    seen.add(a.slug);
+    const l = (a.text.match(/(Wins the 1v1|Team pressure|Mixed threat)/) || [])[1];
+    out.push({ slug: a.slug, r: parseFloat(m[1].replace('−', '-')), l: LABEL[l] || null });
+  }
+  return out;
 }
-export function parseHeroPage(html, names, self) {
+// Hero page: tier, comp lean and strongest duos (combined win rate).
+export function parseHeroPage(html) {
   const f = flat(html);
-  const lean = (f.match(/Leans (DIVE|RUSH|POKE)/i) || [])[1];
-  const tier = (f.match(/(?:Tank|Damage|Support) Tier ([SABCDF])\b/) || [])[1];
-  const sec = section(f, /STRONGEST DUOS/i, [/Heroes to ban against/i, /Performance by Rank/i, /EASIEST MATCHUPS/i, /HARDEST MATCHUPS/i]);
-  const seen = new Set(), duos = [];
-  parseDuos(sec, names).forEach(d => { if (d.name !== self && !seen.has(d.name)) { seen.add(d.name); duos.push(d); } });
+  const lean = (f.match(/Leans\s*(DIVE|RUSH|POKE)/i) || [])[1];
+  const tier = (html.match(/\bis ([SABCDF]) tier in Overwatch/i) || f.match(/Tier\s*([SABCDF])(?![a-z])/) || [])[1];
+  const duos = [];
+  const i = html.search(/strongest duos/i);
+  if (i >= 0) {
+    const rest = html.slice(i + 12);
+    const j = rest.search(/See all duos|Heroes to ban against|Ban suggestions|Counter picking guides/i);
+    const seen = new Set();
+    for (const a of heroAnchors(j >= 0 ? rest.slice(0, j) : rest.slice(0, 8000))) {
+      const m = a.text.match(/(\d{2}(?:\.\d+)?)%/);
+      if (!m || seen.has(a.slug)) continue;
+      const w = parseFloat(m[1]);
+      if (w < 30 || w > 80) continue;
+      seen.add(a.slug);
+      duos.push({ slug: a.slug, w });
+    }
+  }
   return { lean: lean ? lean.toLowerCase() : null, tier: tier || null, duos: duos.slice(0, 5) };
 }
-export function parseCountersPage(html, names, target) {
-  const f = flat(html), seen = new Set(), out = [];
-  parseCounterEntries(f, names).forEach(e => { if (e.name !== target && !seen.has(e.name)) { seen.add(e.name); out.push(e); } });
-  return out;
-}
 
-// Perks: pairs of community-vote options; first pair is minor, second pair is major.
-function cleanPerkName(n) {
-  let w = n.replace(/\b(New|Updated)\b/g, ' ').replace(/\s+/g, ' ').trim().split(' ');
-  if (w.length % 2 === 0 && w.length > 1 && w.slice(0, w.length / 2).join(' ') === w.slice(w.length / 2).join(' ')) w = w.slice(0, w.length / 2);
-  return w.join(' ');
-}
+// ---- Perks (owperks.com lists every hero on one page) ----
+// "<Hero> View full statistics Minor Perks Community Choice <Name> 72% <text> ... Major Perks Community Choice ..."
 export function parsePerks(html, names) {
-  const f = flat(html);
-  const head = new RegExp('(?<![\\p{L}\\d])(?<n>' + nameAlt(names) + ') (?=Community Choice)', 'gu');
+  let f = flat(html);
+  const cut = f.search(/BEST OVERWATCH HERO PERKS OW PERKS|©/);
+  if (cut > 0) f = f.slice(0, cut);
+  const head = new RegExp('(?<![\\p{L}\\d])(?<n>' + nameAlt(names) + ')(?: New hero)? View full statistics', 'gu');
   const marks = [...f.matchAll(head)].map(m => ({ n: m.groups.n, i: m.index, end: m.index + m[0].length }));
+  const one = txt => [...txt.matchAll(/Community Choice (?<name>.+?) (?:(?:New|Updated) )?(?<pct>\d{1,3})% (?<desc>.+?)(?= Community Choice |$)/g)]
+    .map(m => ({ n: m.groups.name.trim(), p: +m.groups.pct, d: m.groups.desc.trim().slice(0, 220) }))
+    .filter(p => p.n && p.d.length > 8 && p.p <= 100);
   const out = {};
   marks.forEach((mk, k) => {
-    const seg = f.slice(mk.end, k + 1 < marks.length ? marks[k + 1].i : f.length);
-    const perks = [...seg.matchAll(/Community Choice (?<name>.+?) (?<pct>\d{1,3})% (?<desc>.+?)(?= Community Choice |$)/g)]
-      .map(m => ({ n: cleanPerkName(m.groups.name), p: +m.groups.pct, d: m.groups.desc.trim().slice(0, 220) }))
-      .filter(p => p.n && p.d.length > 8);
-    if (!perks.length) return;
-    out[mk.n] = perks.length >= 4 ? { minor: perks.slice(0, 2), major: perks.slice(2, 4) } : { other: perks.slice(0, 4) };
+    let seg = f.slice(mk.end, k + 1 < marks.length ? marks[k + 1].i : f.length).replace(/\s*(?:Tank|Damage|Support) Heroes\s*$/, '');
+    const mi = seg.search(/Minor Perks/), ma = seg.search(/Major Perks/);
+    if (mi < 0 || ma < 0) return;
+    const minor = one(seg.slice(mi, ma)), major = one(seg.slice(ma));
+    if (minor.length || major.length) out[mk.n] = { minor, major };
   });
   return out;
 }
@@ -227,13 +243,21 @@ export async function main() {
     const mapVals = pMap && pMap.values ? pMap.values.map(String).filter(v => !/^all/.test(v)) : [];
     const byNk = new Map(allMaps.map(m => [nk(m.name), m]));
     meta.maps = [];
+    const noStats = [];
     for (const v of mapVals) {
       const m = byNk.get(nk(v)) || null;
       const key = nk(m ? m.name : v);
-      try { mapRates[key] = await fetchRates({ [pMap.name]: v }); } catch (e) { log('  map', v, 'failed:', e.message); }
-      meta.maps.push({ key, name: m ? m.name : cap(v), modes: m ? m.gamemodes || [] : [], img: m ? m.screenshot || '' : '' });
+      try {
+        const r = await fetchRates({ [pMap.name]: v });
+        if (Object.keys(r).length) {
+          mapRates[key] = r;
+          meta.maps.push({ key, name: m ? m.name : cap(v), modes: m ? m.gamemodes || [] : [], img: m ? m.screenshot || '' : '' });
+        } else noStats.push(v);
+      } catch (e) { noStats.push(v); }   // HTTP 400 = not in the competitive map pool right now
       await sleep(400);
     }
+    log('  maps with competitive stats:', meta.maps.length, '| skipped (not in the competitive pool):', noStats.length);
+    meta.knownMaps = allMaps.map(m => nk(m.name));
     meta.rates = rates; meta.mapRates = mapRates;
     ok('rates', Object.keys(rates).length, `${Object.keys(mapRates).length} maps, region ${meta.region || 'default'}`);
   } catch (e) { bad('rates', e); }
@@ -242,30 +266,38 @@ export async function main() {
   const byNameNk = new Map(roster.map(h => [nk(h.name), h]));
   const bySlug = slug => roster.find(h => nk(h.key) === nk(slug) || nk(h.name) === nk(slug));
 
-  // 3. Counterwatch: season, tier, lean, duos, counter matrix
+  // 3. Counterwatch: season, tier, lean, duos, full counter matrix
   try {
     const list = await http(CW + '/stats/overwatch/heroes');
-    const slugs = [...new Set([...list.matchAll(/\/stats\/overwatch\/heroes\/([a-z0-9-]+)/g)].map(m => m[1]))];
+    const slugs = [...new Set([...list.matchAll(/\/stats\/overwatch\/heroes\/([a-z0-9-]+)/g)].map(m => m[1]))].filter(x => !/^opengraph/i.test(x));
     if (slugs.length < 15) throw new Error('only found ' + slugs.length + ' hero links on Counterwatch');
     try {
       const tl = flat(await http(CW + '/stats/overwatch/tier-list'));
-      const sm = tl.match(/Season (\d{1,3})/);
+      const sm = tl.match(/Tier List\W*Season (\d{1,3})/i) || tl.match(/Season (\d{1,3})/);
       if (sm && +sm[1] >= 1 && +sm[1] <= 99) meta.season = { number: +sm[1], source: 'counterwatch.gg' };
     } catch (e) { log('  season lookup failed:', e.message); }
     const cw = {}, counters = {};
-    let heroPages = 0, counterPages = 0;
+    let heroPages = 0, counterPages = 0, shown = 0;
     for (const slug of slugs) {
       const h = bySlug(slug);
       if (!h) { log('  no roster match for Counterwatch slug', slug); continue; }
       try {
-        const hp = parseHeroPage(await http(CW + '/stats/overwatch/heroes/' + slug), names, h.name);
-        cw[h.key] = { tier: hp.tier, lean: hp.lean, duos: hp.duos.map(d => [byNameNk.get(nk(d.name)).key, d.w]) };
-        heroPages++;
+        const html = await http(CW + '/stats/overwatch/heroes/' + slug);
+        const hp = parseHeroPage(html);
+        if (hp.tier || hp.lean || hp.duos.length) {
+          cw[h.key] = { tier: hp.tier, lean: hp.lean, duos: hp.duos.map(d => { const o = bySlug(d.slug); return o ? [o.key, d.w] : null; }).filter(Boolean) };
+          heroPages++;
+        } else if (shown++ < 2) log('  DIAG hero page found nothing for', slug, '| text starts:', flat(html).slice(0, 400));
       } catch (e) { log('  hero page', slug, e.message); }
       await sleep(700);
       try {
-        const es = parseCountersPage(await http(CW + '/stats/overwatch/counters/' + slug), names, h.name);
-        if (es.length) { counters[h.key] = {}; es.forEach(x => { counters[h.key][byNameNk.get(nk(x.name)).key] = [x.r, x.l]; }); counterPages++; }
+        const html = await http(CW + '/stats/overwatch/counters/' + slug);
+        const es = parseCountersPage(html, slug);
+        if (es.length) {
+          counters[h.key] = {};
+          es.forEach(x => { const o = bySlug(x.slug); if (o && o.key !== h.key) counters[h.key][o.key] = [x.r, x.l]; });
+          counterPages++;
+        } else if (shown++ < 2) log('  DIAG counters page found nothing for', slug, '| links:', heroAnchors(html).length, '| text starts:', flat(html).slice(0, 400));
       } catch (e) { log('  counters page', slug, e.message); }
       await sleep(700);
     }
@@ -285,15 +317,13 @@ export async function main() {
 
   // 5. Perks (community votes)
   try {
-    const root = await http(PERKS_URL + '/en');
-    const pages = [...new Set([...root.matchAll(/href="(\/en\/[a-z-]+)"/g)].map(m => m[1]))].slice(0, 8);
-    const htmls = [root];
-    for (const pg of pages) { try { htmls.push(await http(PERKS_URL + pg)); } catch (e) { log('  perks page', pg, e.message); } await sleep(600); }
+    const html = await http(PERKS_URL + '/en');
     const perks = {};
-    htmls.forEach(h => { const o = parsePerks(h, names); Object.entries(o).forEach(([n, v]) => { const hero = byNameNk.get(nk(n)); if (hero && !perks[hero.key]) perks[hero.key] = v; }); });
-    if (Object.keys(perks).length < 10) throw new Error('only parsed perks for ' + Object.keys(perks).length + ' heroes');
+    Object.entries(parsePerks(html, names)).forEach(([n, v]) => { const hero = byNameNk.get(nk(n)); if (hero) perks[hero.key] = v; });
+    const n = Object.keys(perks).length;
+    if (n < 10) { log('  DIAG perks page text starts:', flat(html).slice(0, 500)); throw new Error('only parsed perks for ' + n + ' heroes'); }
     meta.perks = perks;
-    ok('perks', Object.keys(perks).length, 'community vote share');
+    ok('perks', n, 'community vote share');
   } catch (e) { bad('perks', e); }
 
   // Keep the last good copy of any section whose source failed today
@@ -304,7 +334,7 @@ export async function main() {
       meta.sources[src].staleAt = prev.sources && prev.sources[src] ? prev.sources[src].at : prev.updated;
     }
   };
-  keep('rates', ['rates', 'mapRates', 'divisions', 'maps', 'region']);
+  keep('rates', ['rates', 'mapRates', 'divisions', 'maps', 'knownMaps', 'region']);
   keep('counterwatch', ['cw', 'counters', 'season']);
   keep('patchnotes', ['patch']);
   keep('perks', ['perks']);
