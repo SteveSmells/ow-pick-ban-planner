@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Overwatch Draft Assistant</title>
+<title>OW Pick Planner</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:ital,wght@1,700;1,800;1,900&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#080b12;--pn:#0e1525;--p2:#151d31;--tx:#e8ecf4;--mu:#93a0b8;--ac:#f99e1a;--bd:#26324a;--gd:#34d399;--rd:#fb7185;--cy:#00e5ff;--ink:#0b0f19;color-scheme:dark;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -71,7 +71,8 @@ label.f{display:block;font-size:11px;color:var(--mu);margin-top:6px}label.f inpu
 <script>
 'use strict';
 const OF='https://overfast-api.tekrop.fr';
-const KEY='ow_draft_v2';
+const KEY='ow_draft_v3';   // new key: anything typed in by hand in older versions is not carried over
+const BATTLETAG='LightArrow#21557';
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nk=x=>String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
 const cap=s=>String(s||'').replace(/[-_]+/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
@@ -80,10 +81,10 @@ const sg=n=>(n>=0?'+':'−')+f1(Math.abs(n));
 // ---------- state ----------
 let D=null;                                  // data/meta.json written by the daily workflow
 const LIVE={heroes:[],maps:[],roles:[],ok:false};   // live OverFast roster (new heroes/maps show up here first)
-let H=[],M=[],RL=[],CTR_BY={};               // merged heroes, maps, roles, "who does this hero beat" index
-const S={chosen:null,step:1,rank:'all',role:'TANK',map:null,mode:'ALL',q:'',bans:[null,null,null,null],enemy:[null,null,null,null,null],modal:null,insp:null,picker:null,pf:'ALL',pq:'',busy:false,loaded:false,
-prof:{tag:'LightArrow#21557',comfort:false,auto:false,ranks:{},mains:[],pwr:{}},ps:{st:'idle',msg:'Not checked yet.'}};
-try{const v=JSON.parse(localStorage.getItem(KEY)||'null');if(v&&v.prof)Object.assign(S.prof,v.prof)}catch(e){}
+let H=[],M=[],RL=[],CTR_BY={},MAINS=new Set();               // merged heroes, maps, roles, "who does this hero beat" index
+const S={chosen:null,step:1,rank:'all',role:'TANK',map:null,mode:'ALL',q:'',bans:[null,null,null,null],enemy:[null,null,null,null,null],modal:null,insp:null,picker:null,busy:false,loaded:false,
+prof:{tag:BATTLETAG,comfort:true,auto:false,ranks:{},pwr:{},games:{},allGames:{},time:{}},ps:{st:'idle',msg:'Not checked yet.'}};
+try{const v=JSON.parse(localStorage.getItem(KEY)||'null');if(v&&v.prof)['comfort','auto','ranks','pwr','games','allGames','time','avatar'].forEach(k=>{if(v.prof[k]!==undefined)S.prof[k]=v.prof[k]})}catch(e){}
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify({prof:S.prof}))}catch(e){}};
 // ---------- data ----------
 async function loadMeta(bust){
@@ -117,6 +118,8 @@ if(!divs.some(d=>d.key===S.rank))S.rank=divs.length?divs[0].key:'all';
 if(!M.some(m=>m.key===S.map))S.map=M.length?M[0].key:null;
 if(RL.length&&S.role!=='ALL'&&!RL.some(r=>r.id===S.role))S.role=RL[0].id}
 const hk=k=>H.find(h=>h.key===k);
+// "Main" = your 3 most-played heroes in each role (all game modes). It is only a label; it never changes a score.
+function topMains(){const out=new Set(),T=S.prof.time||{};RL.forEach(r=>H.filter(h=>h.role===r.id&&(T[h.key]||0)>0).sort((a,b)=>T[b.key]-T[a.key]).slice(0,3).forEach(h=>out.add(h.key)));return out}
 const hn=n=>H.find(h=>h.name===n);
 const heroByKey=k=>H.find(h=>h.key===k||nk(h.name)===nk(k)||nk(h.key)===nk(k));
 const chosenHero=()=>{const h=S.chosen&&hk(S.chosen);return h&&(S.role==='ALL'||h.role===S.role)&&!banned().includes(h.name)?h:null};
@@ -148,19 +151,23 @@ const r=rt(h);if(!r||r[1]<1)return;
 const md=mapDelta(h);let cb=0;const ce=[],te=[];
 en.forEach(e=>{const c=ctr(h,e);if(!c)return;cb+=c[0]*0.25;if(c[0]>=2)ce.push({e:e.name,r:c[0],l:c[1]});else if(c[0]<=-2)te.push({e:e.name,r:-c[0],l:c[1]})});
 cb=Math.max(-8,Math.min(8,cb));
-const main=P.mains.includes(h.key),pw=P.pwr[h.key];
-const cf=P.comfort&&main?1.5+(typeof pw==='number'&&pw>50?(pw-50)*.1:0):0;
+const main=MAINS.has(h.key),pw=P.pwr[h.key],g=P.allGames[h.key]||0,cg=P.games[h.key]||0;
+// Experience bonus (no cap on how many heroes qualify):
+//  familiarity = 1.5 x games/(games+50), counting every game mode;
+//  win-rate part = your ranked win rate minus the official rate at your rank (capped at +/-10), x0.25,
+//  scaled by ranked games/(ranked games+25), and only once you have 20+ ranked games on the hero.
+let cf=0,mb=null;
+if(P.comfort&&g>0){const fam=1.5*g/(g+50);let edge=0,conf=0;if(cg>=20&&typeof pw==='number'){edge=Math.max(-10,Math.min(10,pw-r[0]));conf=cg/(cg+25)}cf=fam+edge*0.25*conf;mb={fam,edge,conf,g,cg}}
 const wr=r[0];   // displayed: the official win rate at this rank
-sc.push({h,r,wr,md,cb,ce,te,main,pw,cf,total:shrunk(h)+md+cb+cf})});
+sc.push({h,r,wr,md,cb,ce,te,main,pw,cf,mb,total:shrunk(h)+md+cb+cf})});
 sc.sort((a,b)=>b.total-a.total);
 if(S.role==='ALL')return RL.map(ro=>sc.find(x=>x.h.role===ro.id)).filter(Boolean);
 return sc.slice(0,3)}
 function bansCalc(picks){
 if(!D||!D.rates)return[];
 const bn=banned(),P=S.prof;
-const mainsRole=H.filter(h=>P.comfort&&P.mains.includes(h.key)&&(S.role==='ALL'||h.role===S.role)).slice(0,3);
-const tg=[];[...mainsRole,...picks.map(p=>p.h)].forEach(h=>{if(!tg.includes(h))tg.push(h)});
-const ch=chosenHero(),T=ch?[ch]:tg.slice(0,4),W=[1,.7,.5,.35],protect=new Set(P.comfort?P.mains:[]);
+const tg=picks.map(p=>p.h);
+const ch=chosenHero(),T=ch?[ch]:tg.slice(0,4),W=[1,.7,.5,.35],protect=new Set(P.comfort?[...MAINS]:[]);
 const out=[];
 H.forEach(h=>{if(bn.includes(h.name)||protect.has(h.key)||T.includes(h))return;
 const r=rt(h);if(!r||r[1]<1)return;
@@ -181,8 +188,7 @@ L.push('Scored on a sample-weighted win rate: at a '+f1(x.r[1])+'% pick rate its
 const mr=mapRt(h);if(m&&mr)L.push('On '+m.name+': '+f1(mr[0])+'% across all ranks ('+f1(mr[1])+'% pick there). Counted as '+sg(x.md)+' points after weighting for sample size.');
 x.ce.forEach(c=>L.push('Counters '+c.e+' ('+sg(c.r)+(c.l?', '+LBL[c.l]:'')+').'));
 x.te.forEach(c=>L.push(c.e+' counters this hero ('+sg(c.r)+(c.l?', '+LBL[c.l]:'')+').'));
-const cw=cwOf(h);if(cw.tier||cw.lean)L.push('Counterwatch: '+(cw.tier?'tier '+cw.tier:'')+(cw.tier&&cw.lean?', ':'')+(cw.lean?'leans '+cw.lean:'')+'.');
-if(S.prof.comfort&&x.main&&typeof x.pw==='number')L.push('Your own win rate on this hero: '+f1(x.pw)+'%.');
+if(x.mb){const m=x.mb,w=m.edge*0.25*m.conf;L.push('You have played this hero '+m.g+' games in all modes: '+sg(m.fam)+' for familiarity'+(m.conf>0?', '+sg(w)+' for your '+f1(x.pw)+'% ranked win rate vs. the '+f1(x.r[0])+'% official rate over '+m.cg+' ranked games (counted at '+Math.round(m.conf*100)+'% for sample size)':(m.cg>0?' (only '+m.cg+' ranked games, too few to count your win rate)':''))+'. Total '+sg(x.cf)+' points.')}
 return L}
 // ---------- view helpers ----------
 const RSVG={TANK:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v8c0 5.5-3.8 9.8-8 11-4.2-1.2-8-5.5-8-11V4zm3 3v5c0 3.7 2.1 6.7 5 7.8 2.9-1.1 5-4.1 5-7.8V7H7z"/></svg>',DAMAGE:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 3l2 4v14H4V7l2-4zm6 0l2 4v14h-4V7l2-4zm6 0l2 4v14h-4V7l2-4z"/></svg>',SUPPORT:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6V3z"/></svg>',ALL:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l10 5-10 5L2 7l10-5zm0 11.5L19.5 10 22 11.3l-10 5-10-5L4.5 10 12 13.5zm0 4.5l7.5-3.5L22 15.8l-10 5-10-5 2.5-1.3L12 18z"/></svg>'};
@@ -196,14 +202,13 @@ function noData(){return`<div class="pn"><h2 class="nm">No data file yet</h2><p>
 // ---------- views ----------
 function psLine(){const p=S.ps,c=p.st==='public'?'ok':p.st==='idle'||p.st==='checking'?'mut':'bad';return`<div class="mut ${c}" style="font-weight:600">${esc(p.msg)}</div>`}
 function mapList(){const q=S.q.toLowerCase();return M.filter(m=>(S.mode==='ALL'||m.modes.includes(S.mode))&&m.name.toLowerCase().includes(q)).map(m=>{return`<button class="card ${m.key===S.map?'sel':''}" data-a="map" data-v="${esc(m.key)}" style="position:relative;overflow:hidden">${mapImg(m)}<div class="row"><span class="tag">${esc(m.modes.map(cap).join(' / ')||'Map')}</span>${m.fresh||!D||!D.mapRates||!D.mapRates[m.key]?'<span class="tag d">no stats yet</span>':''}</div><div class="nm tr" style="margin-top:4px">${esc(m.name)}</div></button>`}).join('')||'<div class="mut">No maps match.</div>'}
-function poolList(){const q=S.pq.toLowerCase(),P=S.prof;return H.filter(h=>(S.pf==='ALL'||h.role===S.pf)&&(!q||h.name.toLowerCase().includes(q))).sort((a,b)=>(P.mains.includes(b.key)-P.mains.includes(a.key))||a.name.localeCompare(b.name)).map(h=>{const mn=P.mains.includes(h.key),r=rt(h,'all');return`<div class="card ${mn?'sel':''}" data-a="main" data-v="${esc(h.key)}" style="cursor:pointer"><div class="rl">${av(h,30)}<div style="min-width:0"><div class="tr" style="font-weight:800">${mn?'★ ':''}${esc(h.name)}</div><div class="mut">${r?f1(r[0])+'% WR':'no stats yet'}</div></div></div>${mn?`<div class="row" style="margin-top:6px" onclick="event.stopPropagation()"><span class="mut">My WR%</span><input type="number" step="0.5" min="25" max="95" value="${P.pwr[h.key]!=null?P.pwr[h.key]:''}" placeholder="—" data-wr="${esc(h.key)}" style="width:64px"></div>`:''}</div>`}).join('')}
 function pickRow(x,i){const h=x.h,P=S.prof,cw=cwOf(h);
 const bits=[f1(x.r[1])+'% pick'];if(x.r[2]!=null)bits.push(f1(x.r[2])+'% ban');if(mapO()&&mapRt(h))bits.push(sg(x.md)+' on this map');
 const on=S.chosen===h.key;
-return`<div class="card pk ${on?'sel':''}" data-a="insp" data-v="pick:${i}"><span class="tag a">#${i+1}</span>${av(h)}<div class="tx"><div class="nr"><span class="nm">${esc(h.name)}</span>${cw.tier?`<span class="tag">CW ${esc(cw.tier)}</span>`:''}${cw.lean?`<span class="tag">${esc(cw.lean)}</span>`:''}${P.comfort&&x.main?'<span class="tag a">★ Main</span>':''}${x.ce.length?`<span class="tag" style="color:var(--gd)">+${x.ce.length} counter</span>`:''}</div><div class="tr2">${esc(bits.join(' · '))}</div></div><div class="st"><div><div class="wr">${f1(x.wr)}%</div><div class="mut">Win rate</div></div><button class="b ${on?'on2':''}" data-a="choose" data-v="${esc(h.key)}" title="Mark as the hero you're playing">✓ ${on?'Playing':'Play'}</button><button class="b r" data-a="ban" data-v="${esc(h.name)}">Ban</button></div></div>`}
+return`<div class="card pk ${on?'sel':''}" data-a="insp" data-v="pick:${i}"><span class="tag a">#${i+1}</span>${av(h)}<div class="tx"><div class="nr"><span class="nm">${esc(h.name)}</span>${x.main?'<span class="tag a">★ Main</span>':''}${x.ce.length?`<span class="tag" style="color:var(--gd)">+${x.ce.length} counter</span>`:''}</div><div class="tr2">${esc(bits.join(' · '))}</div></div><div class="st"><div><div class="wr">${f1(x.wr)}%</div><div class="mut">Win rate</div></div><button class="b ${on?'on2':''}" data-a="choose" data-v="${esc(h.key)}" title="Mark as the hero you're playing">✓ ${on?'Playing':'Play'}</button><button class="b r" data-a="ban" data-v="${esc(h.name)}">Ban</button></div></div>`}
 function banRow(b,i){return`<div class="card pk" data-a="insp" data-v="ban:${i}"><span class="tag d">#${i+1}</span>${av(b.h)}<div class="tx"><div class="nr"><span class="nm">${esc(b.h.name)}</span>${b.best?'<span class="tag d">counters your pick</span>':''}</div><div class="tr2">${esc(banReason(b))}</div></div><div class="st"><div><div class="wr d">${b.r[2]!=null?f1(b.r[2])+'%':'—'}</div><div class="mut">Ban rate</div></div><button class="b" data-a="ban" data-v="${esc(b.h.name)}">✓ Ban</button></div></div>`}
 function header(){const P=S.prof,st=S.ps.st,pc=st==='public'?'public':st==='checking'?'checking':'off';
-const label=st==='public'?'Public · '+P.mains.length+' mains':st==='checking'?'Checking…':(st==='private'?'Private':'Not public')+(P.comfort&&P.mains.length?' · '+P.mains.length+' custom':' · pure meta');
+const label=st==='public'?'Public · '+Object.keys(P.time).filter(k=>P.time[k]>0).length+' heroes':st==='checking'?'Checking…':(st==='private'?'Private':'Not public')+(P.comfort&&Object.keys(P.allGames).length?' · boost on':' · pure meta');
 const col=st==='public'?'var(--gd)':st==='checking'?'var(--cy)':'var(--rd)';
 const t=D?Date.parse(D.updated):NaN,days=isNaN(t)?99:(Date.now()-t)/864e5,stale=!D||days>3;
 const sub=S.busy?'Refreshing…':D?'Data '+ago(t)+(D.patch&&D.patch.date?' · patch '+D.patch.date:''):'No data file yet';
@@ -220,7 +225,7 @@ if(S.step===3){const modes=[...new Set(M.flatMap(m=>m.modes))].sort();return`<di
 const m=mapO(),picks=recommend(),bs=bansCalc(picks);
 return`<div class="pn" style="position:relative;overflow:hidden">${mapImg(m)}<div class="row"><div><span class="tag a">${esc(m?m.modes.map(cap).join(' / '):'')}</span> <span class="nm">${esc(m?m.name:'')}</span><div class="mut">${m&&topOnMap(m.key)?'Best here (all ranks): '+esc(topOnMap(m.key)):'No map stats yet'}</div><div class="mut">Tap any card for details</div></div></div></div>
 <div class="g g2"><div class="pn"><h3 class="nm">Top ${S.role==='ALL'?'picks by role':'3 picks'}</h3><div class="g" style="margin-top:8px">${picks.map(pickRow).join('')||'<div class="mut">No hero stats for this rank yet.</div>'}</div></div><div class="pn"><h3 class="nm">${chosenHero()?'Top 3 bans for your '+esc(chosenHero().name):'Top 3 priority bans'}</h3><div class="g" style="margin-top:8px">${bs.map(banRow).join('')||'<div class="mut">No ban data for this rank yet.</div>'}</div></div></div>
-<div class="row"><div class="rl"><button class="b" data-a="modal" data-v="sim">Counter sim (${banned().length}B / ${enemies().length}E)</button><button class="b ${S.prof.comfort?'on2':''}" data-a="comfort">★ My mains: ${S.prof.comfort?'ON':'OFF'}</button></div><button class="b" data-a="reset">Reset</button></div>`}
+<div class="row"><div class="rl"><button class="b" data-a="modal" data-v="sim">Counter sim (${banned().length}B / ${enemies().length}E)</button><button class="b ${S.prof.comfort?'on2':''}" data-a="comfort">★ My heroes: ${S.prof.comfort?'ON':'OFF'}</button></div><button class="b" data-a="reset">Reset</button></div>`}
 function sheet(inner){return`<div class="mo" data-a="close"><div class="sh">${inner}</div></div>`}
 const xbtn='<button class="b" data-a="close">✕</button>';
 function perkBlock(h){const p=D&&D.perks&&D.perks[h.key];if(!p)return'';
@@ -237,16 +242,17 @@ return sheet(`<div class="row"><h2 class="nm">Where the data comes from</h2>${xb
 <div class="mut" style="margin:6px 0">Nothing on this page is typed in by hand. A GitHub workflow collects it once a day into data/meta.json${D?' (last run '+esc(new Date(D.updated).toLocaleString())+')':''}.</div>
 <div class="g">${Object.keys(NM).map(k=>{const s=src[k];return`<div class="card"><div class="row"><b>${esc(NM[k])}</b><span class="tag ${s&&s.ok?'a':'d'}">${s?(s.ok?'OK':s.stale?'FAILED · showing older data':'FAILED'):'not run'}</span></div><div class="mut">${s?esc((s.ok?'Updated '+new Date(s.at).toLocaleString()+' · '+(s.count!=null?s.count+' items':'')+(s.note?' · '+s.note:''):(s.error||'')+(s.staleAt?' · older data from '+new Date(s.staleAt).toLocaleDateString():''))):'No result yet. Run the workflow.'}</div></div>`}).join('')}</div>
 <div class="card" style="margin-top:8px"><b>Live roster check</b><div class="mut">${LIVE.ok?'OverFast reports '+LIVE.heroes.length+' heroes and '+LIVE.maps.length+' maps right now. New heroes and maps appear here automatically'+(newH||newM?': '+newH+' new hero(es) and '+newM+' new map(s) since the last data run, shown without stats until the next run.':'; none are new since the last data run.'):'Could not reach OverFast. Showing the roster from the data file.'}</div></div>
-<div class="card" style="margin-top:8px"><b>How the numbers are used</b><ul class="mut" style="margin:6px 0 0;padding-left:18px"><li>The win rate shown is Blizzard’s official one at your rank. Picks are ranked on that rate weighted by how often the hero is played, so a rarely picked hero with a lucky rate can’t jump to the top.</li><li>The selected map adds a bonus: the hero’s win rate on that map minus its all-maps rate, weighted the same way using its pick rate there.</li><li>Matchup bonus = 0.25 × Counterwatch’s counter rating per enemy hero you enter, capped at ±8.</li><li>Heroes under 1% pick rate are left out of picks and bans.</li><li>Tick “Play” on a pick and the bans switch to the heroes that counter that hero most (with their weighted win rate). With nothing ticked, bans target your top picks and starred mains.</li><li>Perk percentages are community votes, not match results.</li></ul></div>
+<div class="card" style="margin-top:8px"><b>How the numbers are used</b><ul class="mut" style="margin:6px 0 0;padding-left:18px"><li>The win rate shown is Blizzard’s official one at your rank. Picks are ranked on that rate weighted by how often the hero is played, so a rarely picked hero with a lucky rate can’t jump to the top.</li><li>The selected map adds a bonus: the hero’s win rate on that map minus its all-maps rate, weighted the same way using its pick rate there.</li><li>Matchup bonus = 0.25 × Counterwatch’s counter rating per enemy hero you enter, capped at ±8.</li><li>Heroes under 1% pick rate are left out of picks and bans.</li><li>Every hero you have played gets an experience bonus: up to +1.5 for familiarity (all game modes, scaled by games played), plus or minus a share of how your ranked win rate compares with the official rate at your rank, once you have 20+ ranked games on it. ★ Main only labels your 3 most-played heroes per role; it never changes a score.</li><li>Tick “Play” on a pick and the bans switch to the heroes that counter that hero most (with their weighted win rate). With nothing ticked, bans target your top 3 picks, and your ★ Main heroes are never suggested as bans.</li><li>Perk percentages are community votes, not match results.</li></ul></div>
 <div class="rl" style="margin-top:10px"><button class="b p" data-a="refresh">Refresh now</button></div>`)}
-if(S.modal==='profile'){const divs=(D&&D.divisions)||[];return sheet(`<div class="row"><div><h2 class="nm">${esc(P.tag)}</h2>${psLine()}</div>${xbtn}</div>
-<div class="rl" style="margin:8px 0"><input id="tag" value="${esc(P.tag)}" style="flex:1" aria-label="BattleTag"><button class="b p" data-a="savetag">Check / sync</button></div><div class="mut">Career Profile must be set to Public in Overwatch (Options → Social) for ranks and hero stats to sync. You can always set everything by hand below.</div>
-<div class="g g3" style="margin-top:8px">${RL.map(r=>`<div class="card"><div class="mut">My ${esc(r.name)} rank</div><select data-rr="${esc(r.id)}" style="width:100%"><option value="">Not set</option>${divs.filter(d=>d.key!=='all').map(d=>`<option value="${esc(d.key)}" ${P.ranks[r.id]===d.key?'selected':''}>${esc(d.label)}</option>`).join('')}</select></div>`).join('')}</div>
-<label class="rl" style="margin:8px 0"><input type="checkbox" data-ck="comfort" ${P.comfort?'checked':''}> Boost ★ starred mains in picks and protect them in bans</label>
-<label class="rl"><input type="checkbox" data-ck="auto" ${P.auto?'checked':''}> Auto-match rank when selecting a role</label>
-<h3 class="nm" style="margin:12px 0 6px">Hero pool · ${P.mains.length} starred</h3>
-<div class="pills">${['ALL',...RL.map(r=>r.id)].map(x=>`<button class="b ${S.pf===x?'on2':''}" data-a="pf" data-v="${esc(x)}">${esc(x==='ALL'?'ALL':(RL.find(r=>r.id===x)||{}).name||x)}</button>`).join('')}</div>
-<input id="pq" placeholder="Search heroes…" value="${esc(S.pq)}" style="width:100%;margin:6px 0"><div id="plist" class="g g3">${poolList()}</div>`)}
+if(S.modal==='profile'){const played=H.filter(h=>(P.time[h.key]||0)>0||(P.allGames[h.key]||0)>0).sort((a,b)=>(P.time[b.key]||0)-(P.time[a.key]||0));return sheet(`<div class="row"><div><h2 class="nm">${esc(P.tag)}</h2>${psLine()}</div>${xbtn}</div>
+<div class="rl" style="margin:8px 0"><button class="b p" data-a="resync">Sync now</button></div><div class="mut">Your ranks and heroes come from your public Career Profile and refresh every time the page opens.</div>
+<h3 class="nm" style="margin:12px 0 6px">Your ranks</h3>
+<div class="g g3">${RL.map(r=>`<div class="card"><div class="mut">${esc(r.name)}</div><b>${P.ranks[r.id]?esc(divLabel(P.ranks[r.id])):'—'}</b></div>`).join('')}</div>
+<h3 class="nm" style="margin:12px 0 6px">Heroes you play (${played.length}, most played first)</h3>
+<div class="mut" style="margin-bottom:6px">★ Main marks your 3 most-played heroes in each role. It is only a label. Games count every mode; the win rate is ranked only.</div>
+<div class="g g3">${played.map(h=>`<div class="card ${MAINS.has(h.key)?'sel':''}"><div class="rl">${av(h,30)}<div style="min-width:0"><div class="tr" style="font-weight:800">${MAINS.has(h.key)?'★ ':''}${esc(h.name)}</div><div class="mut">${P.allGames[h.key]||0} games · ${P.games[h.key]?(P.pwr[h.key]!=null?f1(P.pwr[h.key])+'% ranked ('+P.games[h.key]+')':'ranked '+P.games[h.key]):'no ranked games'}</div></div></div></div>`).join('')||'<div class="mut">None yet. Sync needs a public profile.</div>'}</div>
+<label class="rl" style="margin:12px 0 8px"><input type="checkbox" data-ck="comfort" ${P.comfort?'checked':''}> Boost heroes I play a lot in picks, and never suggest banning my top ones</label>
+<label class="rl"><input type="checkbox" data-ck="auto" ${P.auto?'checked':''}> Auto-match rank when selecting a role</label>`)}
 if(S.modal==='sim'){const pk=S.picker;return sheet(`<div class="row"><h2 class="nm">Counter-pick simulator</h2>${xbtn}</div><div class="pills" style="margin:8px 0"><button class="b r" data-a="clear">Clear all</button></div>
 <div class="mut">4 lobby ban slots</div><div class="g" style="grid-template-columns:repeat(4,1fr)">${S.bans.map((b,i)=>`<div class="slot ${b?'f':''}" data-a="slot" data-v="ban:${i}:ALL">${esc(b||'Ban '+(i+1))}</div>`).join('')}</div>
 <div class="mut" style="margin-top:8px">5 enemy slots</div><div class="g" style="grid-template-columns:repeat(5,1fr)">${S.enemy.map((b,i)=>{const sr=['TANK','DAMAGE','DAMAGE','SUPPORT','SUPPORT'][i],sl=['Tank','DPS 1','DPS 2','Sup 1','Sup 2'][i];return`<div class="slot ${b?'f':''}" data-a="slot" data-v="enemy:${i}:${sr}">${esc(b||sl)}</div>`}).join('')}</div>
@@ -270,7 +276,7 @@ ${patchBlock(h)}
 return''}
 function logoFail(i){if(!i.dataset.t){i.dataset.t='1';i.src='logo.svg'}else i.parentNode.style.display='none'}
 let toastT;function toast(t){const e=document.createElement('div');e.className='toast';e.textContent=t;document.body.appendChild(e);clearTimeout(toastT);toastT=setTimeout(()=>e.remove(),4200)}
-function render(){const y=window.scrollY;document.title='Overwatch '+(D&&D.season?'S'+D.season.number+' ':'')+'Draft Assistant';document.getElementById('app').innerHTML=header()+(D?nav():'')+step()+modal();window.scrollTo(0,y)}
+function render(){MAINS=topMains();const y=window.scrollY;document.title='OW Pick Planner';document.getElementById('app').innerHTML=header()+(D?nav():'')+step()+modal();window.scrollTo(0,y)}
 // ---------- actions ----------
 function toggleBan(n){const bh=hn(n);if(bh&&S.chosen===bh.key)S.chosen=null;const i=S.bans.indexOf(n);if(i>-1)S.bans[i]=null;else{const e=S.bans.indexOf(null);S.bans[e<0?3:e]=n}S.enemy=S.enemy.map(x=>x===n?null:x)}
 function setEnemy(n){const h=hn(n);if(!h)return;if(S.enemy.includes(n)){S.enemy=S.enemy.map(x=>x===n?null:x);return}
@@ -282,12 +288,11 @@ map:v=>{S.map=v;S.step=4},mode:v=>S.mode=v,modal:v=>S.modal=v,close:()=>{S.modal
 choose:v=>{S.chosen=S.chosen===v?null:v},chooseclose:v=>{S.chosen=S.chosen===v?null:v;S.modal=null},ban:v=>toggleBan(v),banclose:v=>{toggleBan(v);S.modal=null},enemyclose:v=>{setEnemy(v);S.modal=null},
 comfort:()=>{S.prof.comfort=!S.prof.comfort;save()},
 reset:()=>{S.chosen=null;S.bans=[null,null,null,null];S.enemy=[null,null,null,null,null];S.step=1},
-main:v=>{const m=S.prof.mains,i=m.indexOf(v);if(i>-1)m.splice(i,1);else m.push(v);save()},
-pf:v=>S.pf=v,clear:()=>{S.bans=[null,null,null,null];S.enemy=[null,null,null,null,null]},
+clear:()=>{S.bans=[null,null,null,null];S.enemy=[null,null,null,null,null]},
 slot:v=>{if(!v){S.picker=null;return}const p=v.split(':');S.picker={t:p[0],i:+p[1],r:p[2]}},
 assign:v=>{const k=S.picker;if(!k)return;const arr=k.t==='ban'?S.bans:S.enemy;const o=arr.indexOf(v);if(o>-1)arr[o]=null;arr[k.i]=v;if(k.t==='ban')S.enemy=S.enemy.map(x=>x===v?null:x);S.picker=null},
 insp:v=>{const[t,i]=v.split(':');const picks=recommend();const d=t==='pick'?picks[+i]:bansCalc(picks)[+i];if(d){S.insp={type:t,i:+i,d};S.modal='insp'}},
-savetag:()=>{const v=document.getElementById('tag').value.trim();if(v){S.prof.tag=v;save();syncProfile()}},
+resync:()=>{syncProfile()},
 refresh:()=>{loadAll(true)}};
 async function loadAll(bust){
 if(S.busy)return;S.busy=true;render();
@@ -309,13 +314,19 @@ if(!r.ok){S.ps={st:'error',msg:'OverFast returned HTTP '+r.status+'. Try again s
 const d=await r.json();P.avatar=d.avatar||P.avatar;
 if(d.privacy==='private'||!d.competitive){S.ps={st:'private',msg:'Profile found but private. Ranks and hero stats stay hidden until Career Profile is Public.'};save();render();return}
 const c=(d.competitive&&(d.competitive.pc||d.competitive.console))||{};
+P.ranks={};
 RL.forEach(ro=>{const k=toDiv(c[ro.id.toLowerCase()]&&c[ro.id.toLowerCase()].division);if(k)P.ranks[ro.id]=k});
 let n=0;
-try{const sr=await fetch(OFP+encodeURIComponent(slug)+'/stats/summary?gamemode=competitive');
-if(sr.ok){const sd=await sr.json(),ent=[];P.pwr={};
-Object.entries(sd.heroes||{}).forEach(([k,v])=>{const h=heroByKey(k);if(!h||!v)return;if(typeof v.winrate==='number')P.pwr[h.key]=+v.winrate.toFixed(1);if(typeof v.time_played==='number'&&v.time_played>0)ent.push([h.key,v.time_played])});
-ent.sort((a,b)=>b[1]-a[1]);P.mains=ent.slice(0,6).map(e=>e[0]);n=P.mains.length;if(n)P.comfort=true}}catch(e){}
-S.ps={st:'public',msg:'Public profile synced ('+now+'): '+n+' top heroes, role ranks updated.'};save();render()
+try{
+const get=async gm=>{try{const r=await fetch(OFP+encodeURIComponent(slug)+'/stats/summary?gamemode='+gm);return r.ok?await r.json():null}catch(e){return null}};
+const [cd,qd]=await Promise.all([get('competitive'),get('quickplay')]);
+if(cd||qd){P.pwr={};P.games={};P.allGames={};P.time={};
+const gp=v=>typeof v.games_played==='number'?v.games_played:(typeof v.games_won==='number'&&typeof v.games_lost==='number'?v.games_won+v.games_lost:0);
+const add=(d,ranked)=>Object.entries((d&&d.heroes)||{}).forEach(([k,v])=>{const h=heroByKey(k);if(!h||!v)return;const g=gp(v);
+P.allGames[h.key]=(P.allGames[h.key]||0)+g;P.time[h.key]=(P.time[h.key]||0)+(typeof v.time_played==='number'?v.time_played:0);
+if(ranked){P.games[h.key]=g;if(typeof v.winrate==='number'&&g>0)P.pwr[h.key]=+v.winrate.toFixed(1)}});
+add(cd,true);add(qd,false);n=Object.keys(P.allGames).filter(k=>P.allGames[k]>0).length}}catch(e){}
+S.ps={st:'public',msg:'Public profile synced ('+now+'): '+n+' heroes played (ranked + quick play), role ranks updated.'};save();render()
 }catch(e){S.ps={st:'error',msg:'Network error reaching OverFast. Check your connection and try again.'};render()}}
 // ---------- events ----------
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&S.modal){S.modal=null;S.picker=null;render()}});
@@ -323,11 +334,9 @@ document.addEventListener('click',e=>{const t=e.target.closest('[data-a]');if(!t
 const a=t.dataset.a;if(!A[a])return;e.stopPropagation();const sc=document.querySelector('.sh')?.scrollTop;A[a](t.dataset.v);if(a!=='refresh'){render();const sh=document.querySelector('.sh');if(sh&&sc&&S.modal)sh.scrollTop=sc}});
 document.addEventListener('input',e=>{const t=e.target;
 if(t.id==='mq'){S.q=t.value;document.getElementById('maplist').innerHTML=mapList()}
-else if(t.id==='pq'){S.pq=t.value;document.getElementById('plist').innerHTML=poolList()}
-else if(t.dataset.wr){const v=parseFloat(t.value);if(t.value===''){delete S.prof.pwr[t.dataset.wr];save()}else if(!isNaN(v)){S.prof.pwr[t.dataset.wr]=Math.min(95,Math.max(25,v));save()}}});
+});
 document.addEventListener('change',e=>{const t=e.target;
-if(t.dataset.rr){if(t.value)S.prof.ranks[t.dataset.rr]=t.value;else delete S.prof.ranks[t.dataset.rr];if(S.role===t.dataset.rr&&t.value)S.rank=t.value;save();render()}
-else if(t.dataset.ck){S.prof[t.dataset.ck]=t.checked;save();render()}});
+if(t.dataset.ck){S.prof[t.dataset.ck]=t.checked;save();render()}});
 // ---------- start ----------
 render();
 loadAll(false).then(()=>{if(S.prof.tag)syncProfile()});
