@@ -102,9 +102,10 @@ H=[...hm.values()].filter(h=>h.name&&h.role).sort((a,b)=>a.name.localeCompare(b.
 const mm=new Map();
 ((D&&D.maps)||[]).forEach(m=>mm.set(m.key,{key:m.key,name:m.name,modes:m.modes||[],img:m.img||'',fresh:false}));
 const modeSet=new Set([...mm.values()].flatMap(m=>m.modes));
+const known=new Set((D&&D.knownMaps)||[]);   // every map the roster had at the last data run
 LIVE.maps.forEach(m=>{const k=nk(m.name),modes=m.gamemodes||[],ex=mm.get(k);
 if(ex){if(m.screenshot)ex.img=m.screenshot;if(!ex.modes.length)ex.modes=modes;return}
-if(modeSet.size&&modes.some(x=>modeSet.has(x)))mm.set(k,{key:k,name:m.name,modes,img:m.screenshot||'',fresh:true})});
+if(known.size&&!known.has(k)&&modeSet.size&&modes.some(x=>modeSet.has(x)))mm.set(k,{key:k,name:m.name,modes,img:m.screenshot||'',fresh:true})});
 M=[...mm.values()].sort((a,b)=>a.name.localeCompare(b.name));
 RL=(LIVE.roles.length?LIVE.roles:(D&&D.roles)||[]).map(r=>({id:String(r.key).toUpperCase(),name:r.name,desc:r.description||'',icon:r.icon||''}));
 CTR_BY={};const c=(D&&D.counters)||{};
