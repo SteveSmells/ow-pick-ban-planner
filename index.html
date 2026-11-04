@@ -45,7 +45,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .pk{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;gap:8px;align-items:center;cursor:pointer}
 .pk .tx{min-width:0}.pk .nr{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
 .pk .st{display:flex;align-items:center;gap:8px;text-align:right}
-@media(max-width:560px){.pk{grid-template-columns:auto auto minmax(0,1fr)}.pk .st{grid-column:1/-1;justify-content:space-between;border-top:1px solid var(--bd);padding-top:6px}}
+@media(max-width:560px){.pk:not(.b4){grid-template-columns:auto auto minmax(0,1fr)}.pk:not(.b4) .st{grid-column:1/-1;justify-content:space-between;border-top:1px solid var(--bd);padding-top:6px}}
 .av{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:12px;color:#fff;flex-shrink:0;position:relative;overflow:hidden;border:1px solid #475569}
 .av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:top;border-radius:inherit}.av span{position:relative}
 .TANK{background:linear-gradient(135deg,#2563eb,#0b1020)}.DAMAGE{background:linear-gradient(135deg,#e11d48,#0b1020)}.SUPPORT{background:linear-gradient(135deg,#059669,#0b1020)}
@@ -68,7 +68,6 @@ input,select{background:#0a0f1b;color:var(--tx);border:1px solid var(--bd);borde
 'use strict';
 const OF='https://overfast-api.tekrop.fr';
 const KEY='ow_draft_v3';   // new key: anything typed in by hand in older versions is not carried over
-const BATTLETAG='LightArrow#21557';
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nk=x=>String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
 const cap=s=>String(s||'').replace(/[-_]+/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
@@ -77,11 +76,17 @@ const sg=n=>(n>=0?'+':'−')+f1(Math.abs(n));
 // ---------- state ----------
 let D=null;                                  // data/meta.json written by the daily workflow
 const LIVE={heroes:[],maps:[],roles:[],ok:false};   // live OverFast roster (new heroes/maps show up here first)
-let H=[],M=[],RL=[],MAINS=new Set(),HB=new Map(),HN=new Map(),HX=new Map();   // merged heroes, maps, roles; hero lookups by key, name, normalised key/name
-const S={chosen:null,step:1,rank:'all',role:'TANK',map:null,mode:'ALL',q:'',bans:[],modal:null,insp:null,busy:false,loaded:false,
-prof:{tag:BATTLETAG,comfort:true,auto:false,ranks:{},pwr:{},games:{},allGames:{},time:{}},ps:{st:'idle',msg:'Not checked yet.'}};
-try{const v=JSON.parse(localStorage.getItem(KEY)||'null');if(v&&v.prof)['comfort','auto','ranks','pwr','games','allGames','time','avatar'].forEach(k=>{if(v.prof[k]!==undefined)S.prof[k]=v.prof[k]})}catch(e){}
+let H=[],M=[],RL=[],MAINS=new Set(),HB=new Map(),HX=new Map();   // merged heroes, maps, roles; hero lookups by key, name, normalised key/name
+const S={chosen:null,step:1,rank:'all',role:'TANK',map:null,mode:'ALL',q:'',modal:null,insp:null,busy:false,loaded:false,
+prof:{tag:'',comfort:true,auto:false,ranks:{},pwr:{},games:{},allGames:{},time:{}},ps:{st:'idle',msg:'Not checked yet.'}};
+try{const v=JSON.parse(localStorage.getItem(KEY)||'null');if(v&&v.prof)['tag','comfort','auto','ranks','pwr','games','allGames','time','avatar'].forEach(k=>{if(v.prof[k]!==undefined)S.prof[k]=v.prof[k]})}catch(e){}
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify({prof:S.prof}))}catch(e){}};
+// No profile is built in. A BattleTag is only used once it has been typed in on this device (profile screen)
+// or the page was opened once with ?tag=Name-12345. It is remembered on this device only.
+const parseTag=v=>{const m=String(v||'').trim().match(/^(.+?)\s*[#-]\s*(\d{3,6})$/);return m?m[1].trim()+'#'+m[2]:''};
+const clearSynced=()=>{const P=S.prof;P.ranks={};P.pwr={};P.games={};P.allGames={};P.time={};delete P.avatar};
+try{const t=parseTag(new URLSearchParams(location.search).get('tag'));if(t){if(t!==S.prof.tag)clearSynced();S.prof.tag=t;history.replaceState(null,'',location.pathname);save()}}catch(e){}
+if(!S.prof.tag)S.ps={st:'none',msg:'No BattleTag is connected on this device.'};
 // ---------- data ----------
 async function loadMeta(bust){
 try{const r=await fetch('data/meta.json'+(bust?'?t='+Date.now():''),{cache:'no-cache'});D=r.ok?await r.json():null}catch(e){D=null}}
@@ -96,7 +101,7 @@ const hm=new Map();
 ((D&&D.heroes)||[]).forEach(h=>hm.set(h.key,{key:h.key,name:h.name,role:String(h.role).toUpperCase(),portrait:h.portrait||'',fresh:false}));
 LIVE.heroes.forEach(h=>{if(!h.key||!h.name||!h.role)return;const o=hm.get(h.key)||{key:h.key,name:h.name,role:'',portrait:'',fresh:!!D};o.name=h.name;o.role=String(h.role).toUpperCase();o.portrait=h.portrait||o.portrait;hm.set(h.key,o)});
 H=[...hm.values()].filter(h=>h.name&&h.role).sort((a,b)=>a.name.localeCompare(b.name));
-HB=new Map(H.map(h=>[h.key,h]));HN=new Map(H.map(h=>[h.name,h]));HX=new Map(H.flatMap(h=>[[nk(h.key),h],[nk(h.name),h]]));
+HB=new Map(H.map(h=>[h.key,h]));HX=new Map(H.flatMap(h=>[[nk(h.key),h],[nk(h.name),h]]));
 const mm=new Map();
 ((D&&D.maps)||[]).forEach(m=>mm.set(m.key,{key:m.key,name:m.name,modes:m.modes||[],img:m.img||'',fresh:false}));
 const modeSet=new Set([...mm.values()].flatMap(m=>m.modes));
@@ -115,12 +120,10 @@ if(RL.length&&S.role!=='ALL'&&!RL.some(r=>r.id===S.role))S.role=RL[0].id}
 const hk=k=>HB.get(k);
 // "Main" = your 3 most-played heroes in each role (all game modes). It is only a label; it never changes a score.
 function topMains(){const out=new Set(),T=S.prof.time||{};RL.forEach(r=>H.filter(h=>h.role===r.id&&(T[h.key]||0)>0).sort((a,b)=>T[b.key]-T[a.key]).slice(0,3).forEach(h=>out.add(h.key)));return out}
-const hn=n=>HN.get(n);
 const heroByKey=k=>HX.get(nk(k));
-const chosenHero=()=>{const h=S.chosen&&hk(S.chosen);return h&&(S.role==='ALL'||h.role===S.role)&&!banned().includes(h.name)?h:null};
+const chosenHero=()=>{const h=S.chosen&&hk(S.chosen);return h&&(S.role==='ALL'||h.role===S.role)?h:null};
 const mapO=()=>M.find(m=>m.key===S.map)||null;
 const divLabel=k=>{const d=((D&&D.divisions)||[]).find(x=>x.key===k);return d?d.label:cap(k)};
-const banned=()=>S.bans;
 const rt=(h,d)=>{const r=D&&D.rates&&D.rates[d||S.rank];return r&&r[h.key]||null};
 const mapRt=h=>{const m=D&&D.mapRates&&D.mapRates[S.map];return m&&m[h.key]||null};
 const confR=pr=>pr/(pr+3);   // rarely played heroes count less: a few games swing their win rate
@@ -138,9 +141,9 @@ const countersOf=(h,n)=>matchups(h,n,1),beatsOf=(h,n)=>matchups(h,n,-1);
 // ---------- engine ----------
 function recommend(){
 if(!D||!D.rates)return[];
-const bn=banned(),P=S.prof;
+const P=S.prof;
 const sc=[];
-H.forEach(h=>{if(bn.includes(h.name)||(S.role!=='ALL'&&h.role!==S.role))return;
+H.forEach(h=>{if(S.role!=='ALL'&&h.role!==S.role)return;
 const r=rt(h);if(!r||r[1]<1)return;
 const md=mapDelta(h);
 const main=MAINS.has(h.key),pw=P.pwr[h.key],g=P.allGames[h.key]||0,cg=P.games[h.key]||0;
@@ -156,11 +159,11 @@ if(S.role==='ALL')return RL.map(ro=>sc.find(x=>x.h.role===ro.id)).filter(Boolean
 return sc.slice(0,3)}
 function bansCalc(picks){
 if(!D||!D.rates)return[];
-const bn=banned(),P=S.prof;
+const P=S.prof;
 const tg=picks.map(p=>p.h);
 const ch=chosenHero(),T=ch?[ch]:tg.slice(0,4),W=[1,.7,.5,.35],protect=new Set(P.comfort?[...MAINS]:[]);
 const out=[];
-H.forEach(h=>{if(bn.includes(h.name)||protect.has(h.key)||T.includes(h))return;
+H.forEach(h=>{if(protect.has(h.key)||T.includes(h))return;
 const r=rt(h);if(!r||r[1]<1)return;
 let s=0,best=null;
 T.forEach((t,i)=>{const c=ctr(h,t);if(c&&c[0]>0){const v=c[0]*W[i];s+=v;if(!best||v>best.v)best={v,t:t.name,r:c[0],l:c[1]}}});
@@ -168,7 +171,7 @@ out.push({h,r,best,total:s+(shrunk(r)+mapDelta(h)-50)*0.8})});
 out.sort((a,b)=>b.total-a.total);
 return out.slice(0,3)}
 function banReason(b){const p=[];
-if(b.best)p.push('Counters your '+b.best.t+' ('+sg(b.best.r)+(b.best.l?', '+LBL[b.best.l]:'')+')');
+if(b.best)p.push('Counters '+(chosenHero()?'your ':'')+b.best.t+' ('+sg(b.best.r)+(b.best.l?', '+LBL[b.best.l]:'')+')');
 p.push(f1(b.r[0])+'% win rate'+(mapO()?' here':'')+' at '+divLabel(S.rank));
 if(b.r[2]!=null)p.push(f1(b.r[2])+'% ban rate');
 return p.join(' · ')}
@@ -187,21 +190,21 @@ function ago(ms){if(isNaN(ms))return 'at an unknown time';const d=Math.floor((Da
 function topHeroes(r,conf){if(!r)return'';return H.filter(h=>r[h.key]&&r[h.key][1]>=1).sort((a,b)=>(r[b.key][0]-50)*conf(r[b.key][1])-(r[a.key][0]-50)*conf(r[a.key][1])).slice(0,3).map(h=>h.name+' '+f1(r[h.key][0])+'%').join(' · ')}
 function noData(){return`<div class="pn"><h2 class="nm">No data file yet</h2><p>This page gets everything from <b>data/meta.json</b>, which a daily GitHub workflow writes. It doesn’t exist in your repo yet.</p><p class="mut">Open your repo on GitHub → <b>Actions</b> tab → <b>Update data</b> → <b>Run workflow</b>. When it finishes (a few minutes), come back and press <b>Refresh</b>.</p></div>`}
 // ---------- views ----------
-function psLine(){const p=S.ps,c=p.st==='public'?'ok':p.st==='idle'||p.st==='checking'?'mut':'bad';return`<div class="mut ${c}" style="font-weight:600">${esc(p.msg)}</div>`}
+function psLine(){const p=S.ps,c=p.st==='public'?'ok':['idle','checking','none'].includes(p.st)?'mut':'bad';return`<div class="mut ${c}" style="font-weight:600">${esc(p.msg)}</div>`}
 function mapList(){const q=S.q.toLowerCase();return M.filter(m=>(S.mode==='ALL'||m.modes.includes(S.mode))&&m.name.toLowerCase().includes(q)).map(m=>`<button class="card ${m.key===S.map?'sel':''}" data-a="map" data-v="${esc(m.key)}" style="position:relative;overflow:hidden">${mapImg(m)}<div class="row"><span class="tag">${esc(m.modes.map(cap).join(' / ')||'Map')}</span>${m.fresh||!D||!D.mapRates||!D.mapRates[m.key]?'<span class="tag d">no stats yet</span>':''}</div><div class="nm tr" style="margin-top:4px">${esc(m.name)}</div></button>`).join('')||'<div class="mut">No maps match.</div>'}
 function pickRow(x,i){const h=x.h;
 const bits=[f1(x.r[1])+'% pick'];if(x.r[2]!=null)bits.push(f1(x.r[2])+'% ban');if(mapO()&&mapRt(h))bits.push(sg(x.md)+' on this map');
 const on=S.chosen===h.key;
-return`<div class="card pk ${on?'sel':''}" data-a="insp" data-v="pick:${i}"><span class="tag a">#${i+1}</span>${av(h)}<div class="tx"><div class="nr"><span class="nm">${esc(h.name)}</span>${x.main?'<span class="tag a" title="One of your 3 most-played heroes in this role" aria-label="Main">★</span>':''}</div><div class="tr2">${esc(bits.join(' · '))}</div></div><div class="st"><div><div class="wr">${f1(x.r[0])}%</div><div class="mut">Win rate</div></div><button class="b ${on?'on2':''}" data-a="choose" data-v="${esc(h.key)}" title="Mark as the hero you're playing">✓ Play</button><button class="b r" data-a="ban" data-v="${esc(h.name)}">Ban</button></div></div>`}
-function banRow(b,i){return`<div class="card pk" data-a="insp" data-v="ban:${i}"><span class="tag d">#${i+1}</span>${av(b.h)}<div class="tx"><div class="nr"><span class="nm">${esc(b.h.name)}</span>${b.best?'<span class="tag d">counters your pick</span>':''}</div><div class="tr2">${esc(banReason(b))}</div></div><div class="st"><div><div class="wr d">${b.r[2]!=null?f1(b.r[2])+'%':'—'}</div><div class="mut">Ban rate</div></div><button class="b" data-a="ban" data-v="${esc(b.h.name)}">✓ Ban</button></div></div>`}
-function header(){const P=S.prof,st=S.ps.st,pc=st==='public'?'public':st==='checking'?'checking':'off';
-const label=st==='public'?'Public · '+Object.keys(P.time).filter(k=>P.time[k]>0).length+' heroes':st==='checking'?'Checking…':(st==='private'?'Private':'Not public')+(P.comfort&&Object.keys(P.allGames).length?' · boost on':' · pure meta');
-const col=st==='public'?'var(--gd)':st==='checking'?'var(--cy)':'var(--rd)';
+return`<div class="card pk ${on?'sel':''}" data-a="insp" data-v="pick:${i}"><span class="tag a">#${i+1}</span>${av(h)}<div class="tx"><div class="nr"><span class="nm">${esc(h.name)}</span>${x.main?'<span class="tag a" title="One of your 3 most-played heroes in this role" aria-label="Main">★</span>':''}</div><div class="tr2">${esc(bits.join(' · '))}</div></div><div class="st"><div><div class="wr">${f1(x.r[0])}%</div><div class="mut">Win rate</div></div><button class="b ${on?'on2':''}" data-a="choose" data-v="${esc(h.key)}" title="Mark as the hero you're playing">✓ Play</button></div></div>`}
+function banRow(b,i){return`<div class="card pk b4" data-a="insp" data-v="ban:${i}"><span class="tag d">#${i+1}</span>${av(b.h)}<div class="tx"><div class="nr"><span class="nm">${esc(b.h.name)}</span>${b.best&&chosenHero()?`<span class="tag d" title="Counters your ${esc(b.best.t)}" aria-label="Counters your ${esc(b.best.t)}">☠</span>`:''}</div><div class="tr2">${esc(banReason(b))}</div></div><div class="st"><div><div class="wr d">${b.r[2]!=null?f1(b.r[2])+'%':'—'}</div><div class="mut">Ban rate</div></div></div></div>`}
+function header(){const P=S.prof,st=S.ps.st,pc=!P.tag?'off':st==='public'?'public':st==='checking'?'checking':'off';
+const label=!P.tag?'Not connected':st==='public'?'Public · '+Object.keys(P.time).filter(k=>P.time[k]>0).length+' heroes':st==='checking'?'Checking…':(st==='private'?'Private':'Not public')+(P.comfort&&Object.keys(P.allGames).length?' · boost on':' · pure meta');
+const col=!P.tag?'var(--mu)':st==='public'?'var(--gd)':st==='checking'?'var(--cy)':'var(--rd)';
 const t=D?Date.parse(D.updated):NaN,days=isNaN(t)?99:(Date.now()-t)/864e5,stale=!D||days>3;
 const sub=S.busy?'Refreshing…':D?'Data '+ago(t)+(D.patch&&D.patch.date?' · patch '+D.patch.date:''):'No data file yet';
 const sn=D&&D.season?D.season.number:null;
 return`<div class="hd"><div class="rl"><div class="crest"><img src="logo.png" alt="Overwatch" onerror="logoFail(this)"></div><div style="min-width:0"><div class="ttl">Overwatch <b>${sn?'S'+sn+' ':''}Draft</b></div><div class="sub"><i class="dot ${S.busy?'pulse':''}" style="background:${S.busy?'var(--ac)':stale?'var(--rd)':'var(--gd)'}"></i><span class="tr">${esc(sub)}</span></div></div></div>
-<div class="rl" style="flex-wrap:wrap"><button class="pill ${pc}" data-a="modal" data-v="profile" title="Career profile"><span class="pa">${P.avatar?`<img src="${esc(P.avatar)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">`:esc((P.tag[0]||'?').toUpperCase())}</span><span><b>${esc(P.tag.split('#')[0])}</b><small style="color:${col}">${esc(label)}</small></span></button><button class="b p" data-a="refresh">${S.busy?'…':'Refresh'}</button><button class="b" data-a="modal" data-v="data">Data</button></div></div>`}
+<div class="rl" style="flex-wrap:wrap"><button class="pill ${pc}" data-a="modal" data-v="profile" title="Career profile"><span class="pa">${P.avatar?`<img src="${esc(P.avatar)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">`:esc((P.tag[0]||'?').toUpperCase())}</span><span><b>${esc(P.tag?P.tag.split('#')[0]:'Profile')}</b><small style="color:${col}">${esc(label)}</small></span></button><button class="b p" data-a="refresh">${S.busy?'…':'Refresh'}</button><button class="b" data-a="modal" data-v="data">Data</button></div></div>`}
 function nav(){const m=mapO(),ro=S.role==='ALL'?'Flex 5v5':(RL.find(r=>r.id===S.role)||{}).name||cap(S.role),v=[divLabel(S.rank),ro,m?m.name:'—','3 Picks / 3 Bans'];return`<div class="nav">${v.map((x,i)=>`<button class="${S.step===i+1?'on':S.step>i+1?'done':''}" data-a="step" data-v="${i+1}"><small>${S.step>i+1?'✓ ':''}${i+1}. ${['Rank','Role','Map','Draft'][i]}</small><span>${esc(x)}</span></button>`).join('')}</div>`}
 function step(){
 if(!D&&S.loaded)return noData();
@@ -212,7 +215,6 @@ if(S.step===3){const modes=[...new Set(M.flatMap(m=>m.modes))].sort();return`<di
 const m=mapO(),picks=recommend(),bs=bansCalc(picks),best=m&&topHeroes(D.mapRates&&D.mapRates[m.key],confM);
 return`<div class="pn" style="position:relative;overflow:hidden">${mapImg(m)}<div class="row"><div><span class="tag a">${esc(m?m.modes.map(cap).join(' / '):'')}</span> <span class="nm">${esc(m?m.name:'')}</span><div class="mut">${best?'Best here (all ranks): '+esc(best):'No map stats yet'}</div><div class="mut">Tap any card for details</div></div></div></div>
 <div class="g g2"><div class="pn"><h3 class="nm">Top ${S.role==='ALL'?'picks by role':'3 picks'}</h3><div class="g" style="margin-top:8px">${picks.map(pickRow).join('')||'<div class="mut">No hero stats for this rank yet.</div>'}</div></div><div class="pn"><h3 class="nm">${chosenHero()?'Top 3 bans for your '+esc(chosenHero().name):'Top 3 priority bans'}</h3><div class="g" style="margin-top:8px">${bs.map(banRow).join('')||'<div class="mut">No ban data for this rank yet.</div>'}</div></div></div>
-${banned().length?`<div class="rl" style="flex-wrap:wrap;margin-bottom:8px"><span class="mut">Banned in lobby:</span>${banned().map(n=>`<button class="b" data-a="unban" data-v="${esc(n)}" title="Undo this ban">${esc(n)} ✕</button>`).join('')}</div>`:''}
 <div class="row"><button class="b ${S.prof.comfort?'on2':''}" data-a="comfort">★ My heroes: ${S.prof.comfort?'ON':'OFF'}</button><button class="b" data-a="reset">Reset</button></div>`}
 function sheet(inner){return`<div class="mo" data-a="close"><div class="sh">${inner}</div></div>`}
 const xbtn='<button class="b" data-a="close">✕</button>';
@@ -232,8 +234,12 @@ return sheet(`<div class="row"><h2 class="nm">Where the data comes from</h2>${xb
 <div class="card" style="margin-top:8px"><b>Live roster check</b><div class="mut">${LIVE.ok?'OverFast reports '+LIVE.heroes.length+' heroes and '+LIVE.maps.length+' maps right now. New heroes and maps appear here automatically'+(newH||newM?': '+newH+' new hero(es) and '+newM+' new map(s) since the last data run, shown without stats until the next run.':'; none are new since the last data run.'):'Could not reach OverFast. Showing the roster from the data file.'}</div></div>
 <div class="card" style="margin-top:8px"><b>How the numbers are used</b><ul class="mut" style="margin:6px 0 0;padding-left:18px"><li>The win rate shown is Blizzard’s official one at your rank. Picks are ranked on that rate weighted by how often the hero is played, so a rarely picked hero with a lucky rate can’t jump to the top.</li><li>The selected map adds a bonus: the hero’s win rate on that map minus its all-maps rate, weighted the same way using its pick rate there.</li><li>Heroes under 1% pick rate are left out of picks and bans.</li><li>Every hero you have played gets an experience bonus: up to +1.5 for familiarity (all game modes, scaled by games played), plus or minus a share of how your ranked win rate compares with the official rate at your rank, once you have 20+ ranked games on it. ★ Main only labels your 3 most-played heroes per role; it never changes a score.</li><li>Bans are the heroes that counter your top 3 picks the most, using Counterwatch’s counter ratings, together with their weighted win rate. Tick “Play” on a pick and the bans switch to the heroes that counter that hero. Your ★ Main heroes are never suggested as bans.</li><li>Perk percentages are community votes, not match results.</li></ul></div>
 <div class="rl" style="margin-top:10px"><button class="b p" data-a="refresh">Refresh now</button></div>`)}
+const tagBox=`<input id="tagin" value="${esc(P.tag)}" placeholder="Name#12345" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="BattleTag" style="flex:1;min-width:130px">`;
+if(S.modal==='profile'&&!P.tag)return sheet(`<div class="row"><h2 class="nm">Connect your profile</h2>${xbtn}</div><p>Picks and bans use official stats only until you connect a BattleTag.</p>
+<div class="rl" style="margin:8px 0">${tagBox}<button class="b p" data-a="connect">Connect</button></div><div class="mut">Your Career Profile must be set to Public in Overwatch (Options → Social). Your BattleTag is remembered on this device only.</div>`);
 if(S.modal==='profile'){const played=H.filter(h=>(P.time[h.key]||0)>0||(P.allGames[h.key]||0)>0).sort((a,b)=>(P.time[b.key]||0)-(P.time[a.key]||0));return sheet(`<div class="row"><div><h2 class="nm">${esc(P.tag)}</h2>${psLine()}</div>${xbtn}</div>
 <div class="rl" style="margin:8px 0"><button class="b p" data-a="resync">Sync now</button></div><div class="mut">Your ranks and heroes come from your public Career Profile and refresh every time the page opens.</div>
+<div class="rl" style="margin:8px 0;flex-wrap:wrap">${tagBox}<button class="b" data-a="connect">Change</button><button class="b r" data-a="disconnect">Disconnect</button></div>
 <h3 class="nm" style="margin:12px 0 6px">Your ranks</h3>
 <div class="g g3">${RL.map(r=>`<div class="card"><div class="mut">${esc(r.name)}</div><b>${P.ranks[r.id]?esc(divLabel(P.ranks[r.id])):'—'}</b></div>`).join('')}</div>
 <h3 class="nm" style="margin:12px 0 6px">Heroes you play (${played.length}, most played first)</h3>
@@ -248,28 +254,30 @@ return sheet(`<div class="row"><div class="rl">${av(h,56)}<div><span class="tag 
 <div class="card"><div class="mut">WHY THIS PICK ON ${esc(m?m.name.toUpperCase():'')} (${esc(divLabel(S.rank).toUpperCase())})</div><ul style="margin:6px 0 0;padding-left:18px">${pickLines(x).map(l=>`<li>${esc(l)}</li>`).join('')}</ul></div>
 <div class="g g2" style="margin-top:8px"><div class="card"><div class="mut" style="color:var(--gd)">BEATS (Counterwatch)</div>${chips(beatsOf(h,4))}</div><div class="card"><div class="mut" style="color:var(--rd)">COUNTERED BY (Counterwatch)</div>${chips(countersOf(h,4))}</div></div>
 ${perkBlock(h)}${patchBlock(h)}
-<div class="rl" style="margin-top:10px;flex-wrap:wrap"><button class="b ${S.chosen===h.key?'on2':''}" style="flex:1" data-a="chooseclose" data-v="${esc(h.key)}">✓ ${S.chosen===h.key?'Playing':'Play this hero'}</button><button class="b r" style="flex:1" data-a="banclose" data-v="${esc(h.name)}">Mark banned</button><button class="b p" data-a="close">Done</button></div>`)}
+<div class="rl" style="margin-top:10px;flex-wrap:wrap"><button class="b ${S.chosen===h.key?'on2':''}" style="flex:1" data-a="chooseclose" data-v="${esc(h.key)}">✓ ${S.chosen===h.key?'Playing':'Play this hero'}</button><button class="b p" data-a="close">Done</button></div>`)}
 const b=it.d,h=b.h;
 return sheet(`<div class="row"><div class="rl">${av(h,56)}<div><span class="tag d">Priority ban #${it.i+1}</span><h2 class="nm">Ban ${esc(h.name)}</h2><div class="mut">${b.r[2]!=null?f1(b.r[2])+'% ban rate · ':''}${f1(b.r[0])}% win rate</div></div></div>${xbtn}</div>
 <div class="card" style="margin-top:10px"><div class="mut" style="color:var(--rd)">WHY BAN ${esc(h.name.toUpperCase())}</div>${esc(banReason(b))}</div>
 <div class="card" style="margin-top:8px"><div class="mut">IF LEFT UNBANNED, COUNTER WITH (Counterwatch)</div><b>${chips(countersOf(h,5))}</b></div>
 ${patchBlock(h)}
-<div class="rl" style="margin-top:10px"><button class="b r" style="flex:1" data-a="banclose" data-v="${esc(h.name)}">Confirm ban in lobby</button></div>`)}
+<div class="rl" style="margin-top:10px"><button class="b p" style="flex:1" data-a="close">Done</button></div>`)}
 return''}
 function logoFail(i){if(!i.dataset.t){i.dataset.t='1';i.src='logo.svg'}else i.parentNode.style.display='none'}
 let toastT;function toast(t){const e=document.createElement('div');e.className='toast';e.textContent=t;document.body.appendChild(e);clearTimeout(toastT);toastT=setTimeout(()=>e.remove(),4200)}
 function render(){MAINS=topMains();const y=window.scrollY;document.title='OW Pick Planner';document.getElementById('app').innerHTML=header()+(D?nav():'')+step()+modal();window.scrollTo(0,y)}
 // ---------- actions ----------
-function toggleBan(n){const bh=hn(n);if(bh&&S.chosen===bh.key)S.chosen=null;const i=S.bans.indexOf(n);if(i>-1)S.bans.splice(i,1);else{if(S.bans.length>=4)S.bans.pop();S.bans.push(n)}}   // lobby has at most 4 bans
 const A={
 step:v=>S.step=+v,rank:v=>{S.rank=v;S.step=2},
 role:v=>{S.role=v;S.chosen=null;const pr=S.prof.ranks[v];if(S.prof.auto&&v!=='ALL'&&pr&&((D&&D.divisions)||[]).some(d=>d.key===pr))S.rank=pr;S.step=3},
 map:v=>{S.map=v;S.step=4},mode:v=>S.mode=v,modal:v=>S.modal=v,close:()=>{S.modal=null},
-choose:v=>{S.chosen=S.chosen===v?null:v},chooseclose:v=>{S.chosen=S.chosen===v?null:v;S.modal=null},ban:v=>toggleBan(v),unban:v=>toggleBan(v),banclose:v=>{toggleBan(v);S.modal=null},
+choose:v=>{S.chosen=S.chosen===v?null:v},chooseclose:v=>{S.chosen=S.chosen===v?null:v;S.modal=null},
 comfort:()=>{S.prof.comfort=!S.prof.comfort;save()},
-reset:()=>{S.chosen=null;S.bans=[];S.step=1},
+reset:()=>{S.chosen=null;S.step=1},
 insp:v=>{const[t,i]=v.split(':');const picks=recommend();const d=t==='pick'?picks[+i]:bansCalc(picks)[+i];if(d){S.insp={type:t,i:+i,d};S.modal='insp'}},
 resync:()=>{syncProfile()},
+connect:()=>{const t=parseTag((document.getElementById('tagin')||{}).value);if(!t){toast('Enter your BattleTag as Name#12345.');return}
+if(t!==S.prof.tag){clearSynced();S.prof.tag=t;S.ps={st:'checking',msg:'Checking…'}}save();syncProfile()},
+disconnect:()=>{clearSynced();S.prof.tag='';S.ps={st:'none',msg:'No BattleTag is connected on this device.'};save()},
 refresh:()=>{loadAll(true)}};
 async function loadAll(bust){
 if(S.busy)return;S.busy=true;render();
@@ -280,6 +288,7 @@ if(bust)toast(D?'Data reloaded ('+ago(Date.parse(D.updated))+').':'No data file 
 const OFP=OF+'/players/';
 function toDiv(d){d=String(d||'');if(!d)return null;const x=((D&&D.divisions)||[]).find(v=>v.key!=='all'&&(nk(v.key)===nk(d)||nk(v.label)===nk(d)));return x?x.key:null}
 async function syncProfile(){
+if(!S.prof.tag)return;
 const tag=S.prof.tag.trim(),slug=tag.replace('#','-'),P=S.prof;
 if(!/.+#\d+/.test(tag)){S.ps={st:'error',msg:'Enter your BattleTag as Name#12345.'};render();return}
 S.ps={st:'checking',msg:'Checking OverFast for '+tag+'…'};render();
@@ -306,7 +315,7 @@ add(cd,true);add(qd,false);n=Object.keys(P.allGames).filter(k=>P.allGames[k]>0).
 S.ps={st:'public',msg:'Public profile synced ('+now+'): '+n+' heroes played (ranked + quick play), role ranks updated.'};save();render()
 }catch(e){S.ps={st:'error',msg:'Network error reaching OverFast. Check your connection and try again.'};render()}}
 // ---------- events ----------
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&S.modal){S.modal=null;render()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&S.modal){S.modal=null;render()}else if(e.key==='Enter'&&e.target.id==='tagin'){A.connect();render()}});
 document.addEventListener('click',e=>{const t=e.target.closest('[data-a]');if(!t)return;if(t.classList.contains('mo')&&e.target!==t)return;
 const a=t.dataset.a;if(!A[a])return;e.stopPropagation();const sc=document.querySelector('.sh')?.scrollTop;A[a](t.dataset.v);if(a!=='refresh'){render();const sh=document.querySelector('.sh');if(sh&&sc&&S.modal)sh.scrollTop=sc}});
 document.addEventListener('input',e=>{const t=e.target;
