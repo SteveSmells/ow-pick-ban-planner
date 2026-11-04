@@ -1,7 +1,8 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Overwatch S5 Draft Assistant</title>
+<title>Overwatch Draft Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:ital,wght@1,700;1,800;1,900&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#080b12;--pn:#0e1525;--p2:#151d31;--tx:#e8ecf4;--mu:#93a0b8;--ac:#f99e1a;--bd:#26324a;--gd:#34d399;--rd:#fb7185;--cy:#00e5ff;--ink:#0b0f19;color-scheme:dark;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 *{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
@@ -65,341 +66,263 @@ input,select{background:#0a0f1b;color:var(--tx);border:1px solid var(--bd);borde
 .ok{color:var(--gd)}.bad{color:var(--rd)}
 label.f{display:block;font-size:11px;color:var(--mu);margin-top:6px}label.f input{display:block;width:100%;margin-top:2px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:#f4f6fb;color:#0b0f19;padding:8px 14px;border-radius:10px;font-size:13px;font-weight:600;z-index:20;max-width:90%}
-</style><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:ital,wght@1,700;1,800;1,900&display=swap" rel="stylesheet">
+</style>
 </head><body><div id="app"></div>
 <script>
 'use strict';
-// ---------- DATA ----------
-const RANKS=[
-['metal','Bronze / Silver / Gold','Metal Ranks','Tier I–III','Brawl & Sustain / Anti-Flank Turrets','Favors self-sufficient heroes, high sustain, turret area denial, and punishing uncoordinated positioning.'],
-['mid','Platinum / Emerald','Plat / Emerald','Tier IV–V','Hybrid Dive-Brawl & Pick Potential','Transitional mechanical scaling. Punishers like Doomfist, Vendetta, and Support Sombra dominate lobbies.'],
-['high','Diamond / Master','Diamond / Master','Tier VI–VII','Coordinated Dive & Sightline Control','Coordinated Dive and Tempo Rush. High-ground control and sightline denial dictate every teamfight.'],
-['top','Grandmaster / Champion','GM / Champion','Tier VIII','Frame-Perfect Dive & Doctrine Tempo','Razor-sharp meta optimization around Doctrine, Support Sombra, D.Mon, and Tracer cooldowns.']];
-const RI={metal:0,mid:1,high:2,top:3};
-const ROLES=[['ALL','Flex 5v5','Overview: the #1 Tank, Damage and Support together.'],['TANK','Tank','Space creation, dive initiation and choke anchors.'],['DAMAGE','Damage','Sightline pressure, flank assassinations and anti-dive turrets.'],['SUPPORT','Support','Grim Mandate tempo, burst heals and peel.']];
-const HR={T:'TANK',D:'DAMAGE',S:'SUPPORT'};
-// id|name|role|subRole|WR|PR|BR|brawl,dive,poke|metal,mid,high,top|perk|synergies|weakTo|strongAgainst
-const HD=`dmon|D.Mon|T|Brawl-Dive Hybrid Mech|55.2|14.2|50.1|9,9,4|8,9,10,10|Overclocked Plasma Cleave + Thermal Thruster Reset|Doctrine,Vendetta,Sombra,Genji|Zenyatta,Sombra,Orisa,Bastion|Winston,Sigma,Sierra,Ana,Widowmaker
-winston|Winston|T|Vertical Dive Initiator|53.8|9.9|7.2|4,10,3|6,8,10,10|Chain Tesla Surge + Barrier Uplift|Doctrine,Sombra,Genji,Tracer|D.Mon,Reaper,Bastion,Torbjörn|Widowmaker,Zenyatta,Sigma,Domina,Sierra,Ana
-domina|Domina|T|Tactical Poke / Zone Anchor|53.2|8.8|4.5|7,3,10|8,9,9,8|Aegis Phalanx Wall + Rail-Lance Piercing|Doctrine,Zenyatta,Widowmaker,Sierra|Winston,Doomfist,Vendetta,Symmetra|Orisa,Cassidy,Torbjörn,Sigma
-reinhardt|Reinhardt|T|Heavy Brawl Vanguard|53.6|10.5|3.2|10,1,3|10,9,7,6|Crusader Momentum + Double Firestrike Ignite|Doctrine,Vendetta,Symmetra,Lúcio|Orisa,Bastion,Zenyatta,Symmetra|Sigma,Brigitte,Cassidy,Venture
-doomfist|Doomfist|T|Hyper-Mobile Disruption Dive|52.1|8.5|20.5|6,10,4|6,9,9,9|Power Matrix Overcharge + Seismic Slam Slow|Sombra,Tracer,Genji,Doctrine|Sombra,Orisa,Cassidy,Brigitte|Sigma,Domina,Widowmaker,Zenyatta,Ana
-sigma|Sigma|T|Long-Range Poke Specialist|51.8|7.4|4.1|3,2,10|8,8,9,9|Kinetic Flux Shielding + Hypersphere Ricochet|Widowmaker,Zenyatta,Sierra,Baptiste|Symmetra,Winston,D.Mon,Vendetta,Reinhardt|Orisa,Torbjörn,Cassidy,Widowmaker
-orisa|Orisa|T|Anti-Brawl Fortify Wall|48.5|6.9|23.4|7,2,6|8,6,4,3|Fortified Javelin Spin + Overheat Piercer|Torbjörn,Bastion,Ana,Doctrine|Zenyatta,Symmetra,Sigma,Domina,Widowmaker|Reinhardt,Doomfist,D.Mon,Vendetta
-dva|D.Va|T|High-Mobility Peel & Dive Matrix|51.9|9.8|6.4|6,10,5|8,9,9,9|Extended Defense Matrix + Micro-Missiles|Doctrine,Genji,Tracer,Ana|Zarya,Symmetra,Sombra,D.Mon|Pharah,Widowmaker,Ashe,Bastion,Torbjörn
-zarya|Zarya|T|High-Charge Brawl Enforcer|51.6|7.5|8.2|10,3,4|9,9,8,7|Projected Barrier Cleanse + Graviton Pull|Reinhardt,Vendetta,Genji,Doctrine|Winston,Widowmaker,Sigma,Domina|D.Va,Orisa,D.Mon,Genji,Junkrat
-junkerqueen|Junker Queen|T|Aggressive Tempo Bleed Brawler|52.8|6.9|3.9|10,5,2|9,9,8,8|Commanding Shout Overhealth + Carnage Reset|Doctrine,Lúcio,Vendetta,Genji|Kiriko,Ana,Orisa,Zenyatta|Winston,Ramattra,Roadhog,Sigma
-hazard|Hazard|T|Spiked Wall Dive-Brawl Disruptor|52.3|6.7|5.8|8,8,3|8,8,9,8|Jagged Wall Trap + Violent Leap Cleave|Doctrine,Vendetta,Sombra,Tracer|Orisa,Ana,Zenyatta,Cassidy|Sigma,Reinhardt,Widowmaker,Ana
-vendetta|Vendetta|D|High-Lethality Melee Flanker|54.9|14.1|11.6|10,9,2|8,9,10,10|Crimson Lunge Bleed Reset + Parry Riposte|Doctrine,D.Mon,Sombra,Reinhardt|Torbjörn,Cassidy,Brigitte,Orisa|Sigma,Domina,Zenyatta,Ana,Widowmaker
-genji|Genji|D|Vertical Dive Assassin|53.4|15.4|5.0|6,10,4|7,9,10,10|Swift Strike Bleed + Deflect Duration Boost|Winston,Doctrine,Sombra,D.Mon|Symmetra,Torbjörn,Brigitte,Winston|Widowmaker,Zenyatta,Sierra,Ana,Cassidy
-torbjorn|Torbjörn|D|Anti-Flank Area Denial|56.5|6.8|4.8|9,5,6|10,9,8,7|Level-3 Overload Turret + Magma Armor|Reinhardt,Orisa,Symmetra,Brigitte|Widowmaker,Sigma,Domina|Tracer,Vendetta,Genji,Sombra,Jetpack Cat,Winston
-tracer|Tracer|D|Hyper-Mobile Flank Harasser|52.5|13.6|23.9|6,10,5|5,7,10,10|Recall Blink Recharge + Pulse Bomb Fast-Charge|Winston,Sombra,D.Mon,Doctrine|Torbjörn,Cassidy,Brigitte|Zenyatta,Ana,Widowmaker,Doctrine,Sigma
-sierra|Sierra|D|Tactical Mobility Hitscan|51.4|12.4|12.4|6,7,9|8,9,9,9|Grapple-Slide Crit Window + EMP Micro-burst|Doctrine,Domina,Sigma,Brigitte|Winston,D.Mon,Widowmaker,Genji|Jetpack Cat,Torbjörn,Orisa,Reinhardt,Vendetta
-cassidy|Cassidy|D|Anti-Flank Hitscan Enforcer|48.5|14.8|30.4|8,5,7|8,9,8,8|Hinder Flashbang Slow + Deadeye Reduction|Reinhardt,Doctrine,Brigitte,Orisa|Widowmaker,Sigma,Domina,Genji|Tracer,Vendetta,Doomfist,Sombra,Jetpack Cat
-widowmaker|Widowmaker|D|Long-Range Sniper Pick|51.2|8.9|26.1|1,3,10|5,8,10,10|Venom Mine Sight-Link + Fast-Charge Scope|Sigma,Domina,Brigitte,Zenyatta|Winston,Sombra,Genji,D.Mon,Tracer|Torbjörn,Cassidy,Symmetra,Orisa,Doctrine,Zenyatta
-symmetra|Symmetra|D|Brawl Teleporter Tactician|54.2|5.4|4.2|10,4,2|9,9,8,8|Overcharged Beam Ramp + Shielded Teleporter|Reinhardt,D.Mon,Doctrine,Torbjörn|Widowmaker,Winston,Sierra|Sigma,Domina,Orisa,Genji,Reinhardt,D.Mon
-ashe|Ashe|D|Mid-Range Dynamite Hitscan|52.1|12.6|6.5|5,5,10|8,9,9,9|Coach Gun Knockback + B.O.B. Anchor|Mercy,Doctrine,Sigma,Domina|Widowmaker,Winston,D.Mon,Genji|Pharah,Echo,Torbjörn,Cassidy,Reinhardt
-reaper|Reaper|D|Close-Range Tank-Busting Brawler|51.7|7.4|2.4|10,6,1|9,8,7,7|Wraith Reload + Soul Globe Lifesteal|Doctrine,Lúcio,Zarya,Reinhardt|Pharah,Widowmaker,Ashe,Cassidy|Winston,Roadhog,Mauga,D.Mon,Reinhardt
-mei|Mei|D|Ice Wall Choke Control|52.6|5.2|4.9|10,3,5|8,8,9,9|Ice Wall Pillar Split + Deep Chill|Reinhardt,D.Mon,Doctrine,Symmetra|Pharah,Widowmaker,Echo|D.Va,Reinhardt,Zarya,Sigma
-doctrine|Doctrine|S|Season 5 Meta Tempo Anchor|57.4|38.7|17.9|10,9,8|10,10,10,10|Grim Mandate Aura + Crimson Tether Overheal|D.Mon,Vendetta,Reinhardt,Winston,Sombra|Widowmaker,Sombra,Tracer,Ana|Orisa,Domina,Brigitte,Zenyatta
-sombra|Sombra|S|Reworked Utility / Debuff Support|53.3|16.9|41.6|8,10,6|8,9,10,10|White-Hat Burst Heal + Viral Debuff Extension|Winston,Tracer,Vendetta,D.Mon,Genji|Torbjörn,Brigitte,Cassidy|Doomfist,D.Mon,Zenyatta,Widowmaker,Ana,Doctrine,Sigma
-jetpackcat|Jetpack Cat|S|Aerial Mobility / Tether Support|50.0|13.8|58.4|6,10,7|8,9,9,9|Feline Thruster Tow-Cable + Nine-Lives Shield|Winston,D.Mon,Genji,Vendetta|Cassidy,Sierra,Torbjörn,Widowmaker|Reinhardt,Symmetra,Doomfist,Brigitte
-zenyatta|Zenyatta|S|Poke Glass-Cannon & Tank Buster|52.0|9.5|3.8|6,6,10|9,9,9,8|Rapid Harmony Orb + Kick Impulse|Sigma,Domina,Doctrine,Widowmaker|Sombra,Tracer,Genji,Winston,Widowmaker|D.Mon,Orisa,Reinhardt,Domina
-brigitte|Brigitte|S|Anti-Dive Backline Bodyguard|52.4|8.2|2.9|8,8,5|8,8,9,9|Whip Shot Inspire Boost + Barrier Bash|Doctrine,Ana,Zenyatta,Widowmaker|Reinhardt,Symmetra,Domina,Zenyatta|Tracer,Sombra,Vendetta,Genji,Doomfist,Winston
-ana|Ana|S|Long-Range Anti-Heal Specialist|47.9|27.2|7.8|7,7,8|7,8,8,7|Biotic Grenade Radius + Nano Speed Surge|Genji,Winston,Reinhardt,Brigitte|Sombra,D.Mon,Winston,Tracer,Vendetta|Doctrine,Orisa,Reinhardt,Doomfist
-kiriko|Kiriko|S|Suzu Cleanse & Flank Healer|51.4|18.4|8.9|8,10,7|8,9,9,10|Protection Suzu Cleanse + Kitsune Rush|D.Mon,Winston,Genji,Vendetta|Tracer,Sombra,Winston|Ana,Junker Queen,Ashe,Sombra
-juno|Juno|S|Hyper-Ring Speed & Orbital Support|52.7|15.2|6.2|9,9,6|9,9,9,9|Hyper Ring Team Speed + Pulsar Torpedoes|Reinhardt,D.Mon,Vendetta,Junker Queen|Sombra,Tracer,Widowmaker,Winston|Reinhardt,Ramattra,Orisa,Mei
-lucio|Lúcio|S|Speed Amp Rush & Sound Barrier|52.9|11.2|4.1|10,8,2|8,9,9,10|Amp It Up Surge + Soundwave Boop|Reinhardt,Junker Queen,D.Mon,Vendetta|Cassidy,Torbjörn,Symmetra|Reinhardt,Sigma,Reaper,Mei
-baptiste|Baptiste|S|Immortality Field Sustainer|51.3|9.8|5.4|8,4,10|8,9,9,9|Immortality Field Save + Exo Boots|Sigma,Domina,Reinhardt,Bastion|Sombra,D.Mon,Winston,Genji|Pharah,Echo,Junkrat,Zarya
-moira|Moira|S|High AoE Brawl Heal & Fade|51.1|14.6|3.5|9,6,3|10,9,7,6|Fade Cleanse Jump + Biotic Orb Burst|Reinhardt,D.Mon,Zarya,Vendetta|Ana,D.Va,Widowmaker|Genji,Tracer,Lúcio,Sombra
-ramattra|Ramattra|T|Hybrid Poke-to-Brawl Nemesis|51.2|6.4|3.1|9,3,7|8,8,8,7|Nemesis Pummel Piercing + Vortex Grounding|Doctrine,Ana,Symmetra,Lúcio|Orisa,Zenyatta,Ana,Bastion|Reinhardt,Sigma,Brigitte,Domina
-mauga|Mauga|T|Dual-Chaingun Sustain Brawler|49.4|5.1|14.2|9,2,5|9,7,6,5|Cardiac Overdrive Lifesteal + Cage Fight Lock|Doctrine,Kiriko,Bastion,Symmetra|Ana,Zenyatta,Sigma,D.Va,Sombra|Roadhog,Reinhardt,Winston,Doomfist
-roadhog|Roadhog|T|Chain Hook Pick & Self-Sustain|49.1|5.8|9.4|7,2,6|9,8,6,6|Pig Pen Slow Trap + Take a Breather|Kiriko,Doctrine,Junkrat,Torbjörn|Ana,Zenyatta,Mauga,Orisa,Reaper|Doomfist,Winston,Wrecking Ball,Vendetta
-wreckingball|Wrecking Ball|T|Hyper-Mobile Grapple Disruptor|51.5|4.2|11.8|3,10,4|6,7,9,9|Adaptive Shield Transfer + Piledriver Lock|Tracer,Sombra,Genji,Zenyatta|Sombra,Cassidy,Brigitte,Roadhog,Mei|Widowmaker,Zenyatta,Sigma,Ashe
-sojourn|Sojourn|D|Railgun Burst Mobility Hitscan|50.9|11.4|8.7|7,8,9|6,8,9,10|Overclock Piercing Rail + Power Slide Jump|Doctrine,Mercy,Winston,D.Mon|Winston,D.Va,Widowmaker,Tracer|Orisa,Mauga,Reinhardt,Bastion,Torbjörn
-soldier76|Soldier: 76|D|Self-Sustaining Sprint Hitscan|51.0|9.2|1.8|6,6,8|9,8,7,6|Biotic Field On-The-Move + Helix Crit Boost|Doctrine,Ana,Reinhardt,Sigma|D.Va,Winston,Widowmaker,Genji|Pharah,Echo,Torbjörn,Jetpack Cat
-echo|Echo|D|Aerial Assassin & Tank Duplicator|51.8|5.5|3.4|5,9,7|6,8,9,9|Focusing Beam Reset + Duplicate Fast Ult|Winston,Mercy,Doctrine,D.Mon|Ashe,Cassidy,Widowmaker,Sierra|Reinhardt,Orisa,Junkrat,Mei,Pharah
-pharah|Pharah|D|Aerial Splash Barrage Specialist|52.2|6.1|9.2|7,8,6|9,8,8,7|Jet Dash Burst + Concussive Impulse|Mercy,Jetpack Cat,D.Mon,Zarya|Ashe,Cassidy,Widowmaker,Sierra,D.Va|Reinhardt,Junkrat,Mei,Symmetra,Reaper,Vendetta
-freja|Freja|D|Updraft Crossbow Bounty Hunter|51.9|7.8|6.1|5,8,9|7,8,9,9|Take Aim Explosive Bolt + Updraft Dash|Doctrine,Sigma,Winston,Zenyatta|Widowmaker,D.Va,Genji,Tracer|Torbjörn,Bastion,Mei,Orisa,Reinhardt
-venture|Venture|D|Subterranean Burrow Brawl-Flanker|52.4|5.9|4.7|9,8,2|8,9,8,8|Burrow Emerge Shield + Drill Dash Knockback|Doctrine,D.Mon,Zarya,Lúcio|Cassidy,Pharah,Echo,Torbjörn|Sigma,Zenyatta,Ana,Widowmaker
-bastion|Bastion|D|Assault Tank-Shredder Artillery|50.2|4.9|2.1|8,2,7|9,7,6,5|Assault Armor + Tactical Grenade Jump|Reinhardt,Orisa,Sigma,Baptiste|Sigma,Genji,Ana,Sojourn,Hanzo|Reinhardt,Winston,D.Mon,Mauga
-junkrat|Junkrat|D|Choke Spam & Concussion Trap|50.8|6.3|2.8|8,4,6|9,8,7,6|Double Concussion Combo + Steel Trap Root|Reinhardt,Roadhog,Torbjörn,Doctrine|Pharah,Echo,Widowmaker,Ashe,Zarya|Reinhardt,Brigitte,Symmetra,Mei
-hanzo|Hanzo|D|Mid-Range Sonic Sniper & Storm Bow|49.8|7.1|4.4|4,4,10|7,8,8,8|Sonic Arrow Reveal + Storm Arrows Ricochet|Zarya,Sigma,Domina,Zenyatta|Winston,Genji,D.Mon,Tracer,Wrecking Ball|Bastion,Torbjörn,Orisa,Cassidy
-mercy|Mercy|S|Damage Boost Pocket & Resurrect|50.4|13.9|7.4|4,6,9|9,8,7,6|Caduceus Damage Amp + Guardian Angel Slingshot|Ashe,Pharah,Sojourn,Echo,Sierra|Widowmaker,Sombra,Tracer,Winston,Cassidy|Junkrat,Mei,Symmetra,Reinhardt
-illari|Illari|S|Healing Pylon & Solar Rifle Poke|51.6|5.8|2.2|5,4,10|8,8,8,8|Healing Pylon Turret + Captive Sun Burst|Sigma,Domina,Ashe,Widowmaker|Winston,D.Mon,Sombra,D.Va|Pharah,Echo,Mercy,Jetpack Cat
-lifeweaver|Lifeweaver|S|Life Grip Rescue & Petal Platform|49.6|6.4|2.1|6,5,8|8,8,7,6|Life Grip Invulnerability + Petal High Ground|Reinhardt,Doomfist,Mauga,D.Mon|Sombra,Winston,Tracer,Vendetta|Zarya,Orisa,Sigma,Mei
-wuyang|Wuyang|S|Martial Flow & Chi Barrier Support|52.2|8.4|4.6|9,8,6|8,9,9,9|Torrential Chi Surge + Flowing Counter-Stance|D.Mon,Vendetta,Winston,Genji|Widowmaker,Pharah,Ana|Doomfist,Vendetta,Genji,Reinhardt`;
-const HEROES0=HD.split('\n').map(r=>{const p=r.split('|');return{id:p[0],name:p[1],role:HR[p[2]],sub:p[3],wr:+p[4],pr:+p[5],br:+p[6],aff:p[7].split(',').map(Number),rw:p[8].split(',').map(Number),perk:p[9],syn:p[10].split(','),ctr:p[11].split(','),str:p[12].split(',')}});
-// id|name|mode|brawl,dive,poke|tag
-const MD=`grimsvotn|Grímsvötn|Hybrid|65,25,10|Volcanic vents, tight chokes|NEW
-kings_row|King’s Row|Hybrid|70,15,15|Iconic brawl, short sightlines
-eichenwalde|Eichenwalde|Hybrid|45,40,15|Castle high ground
-numbani|Numbani|Hybrid|15,70,15|Extreme verticality
-hollywood|Hollywood|Hybrid|30,50,20|Studio flanks
-paraiso|Paraíso|Hybrid|25,60,15|Multi-tier rooftops
-blizzard_world|Blizzard World|Hybrid|30,50,20|Wide catwalks
-midtown|Midtown|Hybrid|45,35,20|Underpass chokes
-neon_junction|Neon Junction|Hybrid|35,50,15|Jump pads, fast rotations
-dorado|Dorado|Escort|10,75,15|Rooftop dominance
-gibraltar|Watchpoint: Gibraltar|Escort|5,85,10|Pure dive
-havana|Havana|Escort|10,15,75|Sniper heaven
-circuit_royal|Circuit Royal|Escort|10,15,75|Up-hill choke, long sightlines
-rialto|Rialto|Escort|35,25,40|Bridge boops
-junkertown|Junkertown|Escort|15,25,60|Wide open first point
-route_66|Route 66|Escort|25,45,30|Train car tops
-shambali|Shambali Monastery|Escort|40,25,35|Steep switchbacks
-lijiang|Lijiang Tower|Control|70,20,10|Symmetra TP, close brawl
-ilios|Ilios|Control|35,35,30|Well & lighthouse boops
-busan|Busan|Control|45,35,20|Sanctuary brawl
-oasis|Oasis|Control|55,35,10|Fast tempo rush
-samoa|Samoa|Control|65,25,10|Volcano pit
-nepal|Nepal|Control|65,20,15|Village chokes
-colosseo|Colosseo|Push|40,40,20|Flank alleys
-esperanca|Esperança|Push|30,55,15|Constant flank angles
-runasapi|Runasapi|Push|45,45,10|Short flanks
-new_queen_street|New Queen Street|Push|35,50,15|Skirmish heavy
-suravasa|Suravasa|Flashpoint|50,40,10|Long rotation sprints
-aatlis|Aatlis|Flashpoint|45,45,10|Multi-level plazas
-new_junk_city|New Junk City|Flashpoint|65,25,10|Claustrophobic arenas
-hanaoka|Hanaoka|Clash|60,30,10|Linear tug-of-war
-throne_of_anubis|Throne of Anubis|Clash|55,35,10|Temple steps`;
-const MAPS=MD.split('\n').map(r=>{const p=r.split('|');const a=p[3].split(',').map(Number);return{id:p[0],name:p[1],mode:p[2],b:a[0],d:a[1],p:a[2],tag:p[4],isNew:p[5]==='NEW'}});
-
-const NEWH={dmon:'S4/5 meta titan',domina:'2026 addition',vendetta:'2026 meta staple',sierra:'2026 addition',doctrine:'NEW Season 5',sombra:'Season 5 rework',jetpackcat:'2026 phenomenon',freja:'2025/26 roster',wuyang:'2025/26 roster'};
-// per-rank "why it works" (metal ~ mid ~ high ~ top)
-const WHYD={
-dmon:'Massive armor pool and wide plasma cleaves melt grouped enemies who fail to kite backwards.~Bridges brawl and dive: peels the backline or booster-cleaves high ground.~Dominant frontline anchor; pairs with Doctrine and Vendetta to vaporize targets through chokes.~Thermal Thruster mobility contests vertical angles while out-trading Winston.',
-winston:'Bubble isolates enemy supports from their team while your cleave ignores shaky aim.~Punishes isolated hitscans on high ground and pairs cleanly with Support Sombra.~King of high-ground maps; denies sniper sightlines and forces cooldowns on every leap.~Dive staple with Tracer, Genji and Doctrine speed/damage windows.',
-domina:'Consistent barrier uptime and ranged pokes let your team play safely behind cover.~Low ban rate makes her a reliable anchor that shuts down long sightlines and chokes.~Out-sustains traditional poke tanks while holding hard corners against rush comps.~Premier low-ban anchor on Escort and Hybrid defense when D.Mon or Doomfist are banned.',
-reinhardt:'Titan in Bronze–Gold: enemies walk straight into hammer range on tight chokes.~Thrives with Doctrine’s tempo buffs on Brawl and Control maps; Earthshatter wins fights outright.~Strong specialist on Grímsvötn, King’s Row and Lijiang with Symmetra TP rotations.~Niche rush specialist for tight volcanic chokes.',
-doomfist:'If unbanned, the empowered punch deletes out-of-position squishies before anyone peels.~Terrifying carry potential in Plat/Emerald; disrupts entire backlines on Push and Flashpoint.~Constant stun anxiety; pairs lethally with Vendetta and Genji collapses.~High-ceiling tempo disruptor whenever he slips past his lobby ban rate.',
-sigma:'Self-sustaining shield and Kinetic Grasp absorb spam while Accretion punishes predictable pushes.~Controls sniper lanes on Havana, Circuit Royal and Junkertown without dive coordination.~Essential off-angle denial to contest enemy Widowmakers and Sierras.~Must-pick alongside Domina on pure poke Escort maps.',
-orisa:'Easy frontline bully who denies Reinhardt and Doomfist in Metal lobbies.~Solid defensive swap when enemy tanks try to brute-force tight chokes.~Low win rate makes her situational, mainly a counter to hard-commit Doomfist or Reinhardt.~Outpaced by D.Mon and Winston; a situational anti-brawl plug.',
-vendetta:'Relentless melee combos tear through slow backlines on tight maps like Grímsvötn.~Dominates skirmishes on Push and Flashpoint; Parry Riposte turns burst into counter-slashes.~Top-tier synergy with Doctrine and Support Sombra; deletes debuffed targets in under a second.~Defines Season 5 brawl-dive tempo alongside Genji and D.Mon.',
-genji:'Deflect punishes linear spam and dash resets snowball fights.~Often open on ban screens, so he dominates vertical maps like Dorado and Gibraltar.~Pairs with Winston, D.Mon and Support Sombra’s debuff.~Strong across high elo with Doctrine empowering his dashes.',
-torbjorn:'Auto-aim turret shuts down Vendetta, Jetpack Cat, Genji and Tracer effortlessly.~Overload armor wins 1v1 duels against flankers while Molten Core locks objectives.~Premier anti-dive anchor on Control, Flashpoint and Grímsvötn defense.~High-value specialist to tax Tracer, Sombra and Vendetta on enclosed points.',
-tracer:'High mechanical floor makes her risky in Bronze–Gold versus Torbjörn or Vendetta.~Controls flank lanes and health packs on Push and Flashpoint.~Unmatched map control; forces enemy supports to look backward.~Apex predator of GM/Champion, untouchable when paired with Support Sombra.',
-sierra:'Forgiving hitscan rifle with a quick slide makes her a great comfort DPS.~Takes aggressive high-ground off-angles and escapes dives smoothly.~Consistent mid-to-long range lethality on Escort and Hybrid maps.~Versatile hitscan anchor when Widowmaker is banned or dive needs mobility.',
-cassidy:'Hinder grenade stops flankers so your team can burst them down.~Heavily banned because Doomfist, Tracer and Vendetta mains ban him every lobby.~Premier bodyguard DPS against hyper-mobile dive.~High-priority counter-pick when enemy Tracer, Sombra or Jetpack Cat slip through bans.',
-widowmaker:'Inconsistent aim at lower tiers makes Sierra or Torbjörn safer unless you’re on Havana.~Holds whole lobbies hostage on Havana, Circuit Royal and Junkertown if unbanned.~Excels on long-sightline Escort maps and forces the enemy to hug walls.~Server-admin potential on sniper maps, with a big ban rate on Escort.',
-symmetra:'Turret car-washes at chokes and a level-3 beam melts barriers and tanks.~Excels on Lijiang, Samoa, Busan and Grímsvötn; melts Sigma, Orisa and Domina shields.~Team teleporter rotations let Reinhardt and brawl comps bypass choke points.~Elite Control and Hybrid specialist that breaks standard defensive setups.',
-doctrine:'Easy-to-apply Grim Tether sustains aggressive teammates while punishing flankers.~Huge pick rate: dictates the pace of every teamfight with AoE tempo and mitigation.~Whenever he’s open he’s a mandatory first-pick anchor.~Centerpiece of Season 5; lets D.Mon, Vendetta and Winston play hyper-aggressively.',
-sombra:'Reworked Hack no longer silences; it applies a damage/healing reduction while burst-healing allies.~Overwhelms enemy tanks with her debuff; banned in a huge share of matches.~If she slips through bans, her off-angle healing plus debuff wins every dive trade.~Top-tier support alongside Doctrine.',
-jetpackcat:'Perma-flight and tow-cable rescues frustrate teams who struggle to hit aerial targets.~The most banned hero; aerial tether mobility breaks map geometry.~Enables vertical rotations for tanks and flankers on Dorado, Gibraltar and Numbani.~Banned in most lobbies for aerial survivability and tank-towing.',
-zenyatta:'Discord Orb melts enemy tanks standing in the open.~Best answer to high-HP tanks like D.Mon, Domina and Reinhardt.~Dominates long sightlines while Transcendence counters Genji/Vendetta blades.~Premier third-DPS support when Sombra is banned or on poke maps.',
-brigitte:'Inspire gives constant AoE healing in brawls while Whip Shot knocks away Vendetta.~Shuts down Doomfist, Vendetta and Genji dives on your co-support.~Essential bodyguard for Doctrine or Ana against Winston/Tracer/Sombra dives.~High-win-rate counter-dive anchor on Dorado, Gibraltar and Control maps.',
-ana:'Popular comfort hero; Biotic Grenade punishes roadblocks, though dive pressure hurts her win rate.~Nano Boost with Genji or Vendetta remains a reliable fight-winning combo.~Best on high-ground maps with long sightlines where Brigitte can peel.~Playable comfort pick, though Doctrine and Support Sombra out-tempo her.'};
-function why(h,ri){const w=WHYD[h.id];if(w)return w.split('~')[ri];
-const sy=h.syn.slice(0,2).join(' & '),sa=h.str.slice(0,2).join(' & ');
-return['${h} (${s}) gives steady value in Metal ranks and punishes uncoordinated enemies.','Solid ${s} option in Plat/Emerald; pairs cleanly with ${y}.','Reliable pick when your team needs ${s} pressure on this map geometry.','High-elo specialist that excels alongside ${y} while countering ${a}.'][ri].replace('${h}',h.name).replace(/\$\{s\}/g,h.sub.toLowerCase()).replace('${y}',sy).replace('${a}',sa)}
-const MSUM={grimsvotn:'Newest map, set in an active Icelandic caldera. Tight geothermal corridors make brawl and melee flankers lethal.',kings_row:'The quintessential brawl arena. Narrow streets and hard corners reward Reinhardt, Domina, Vendetta and Doctrine.',eichenwalde:'A grueling choke brawl first, castle parapets on second, a tight throne room to finish.',numbani:'Point A high grounds demand vertical mobility; immobile tanks get encircled.',hollywood:'Second-phase rooftops force vertical engagement or mobile flankers to dislodge hitscan nests.',paraiso:'High verticality across rooftops and club interior favors Winston, D.Mon and Doomfist.',blizzard_world:'Contest the high catwalks on second point, then transition to an indoor final brawl.',midtown:'Balanced urban layout where rush comps and off-angle hitscans both find value.',neon_junction:'Fast urban hybrid where mobile flankers exploit multi-level walkways.',dorado:'Decided by who owns the rooftops and church balcony. Winston, D.Mon and Genji rule.',gibraltar:'The ultimate dive map. Ground-bound tanks struggle in the shuttle phase.',havana:'Huge unobstructed sightlines on first and third. Widowmaker bans skyrocket; Sigma and Domina anchor.',circuit_royal:'A narrow road with few flank routes makes long-range poke the gold standard.',rialto:'Punishes careless bridge crossings and rewards midrange poke and sturdy frontliners.',junkertown:'Point A is a shooting gallery for Widowmaker and Sierra before tightening to scrap fights.',route_66:'The gas station and train cars favor mobile tanks and flankers who can clear perched hitscans.',shambali:'A winding mountain road where Domina, Sigma and Ramattra hold angles against uphill attackers.',lijiang:'Enclosed points make Symmetra, Reinhardt, D.Mon and Vendetta unstoppable in rotations.',ilios:'Three sub-maps demand adaptability: boops on Well/Lighthouse, sniper checks on Ruins.',busan:'Symmetra and brawl dominate Sanctuary, while dive rules MEKA Base.',oasis:'High-tempo map where speed boosts, Doctrine buffs, Tracer and Vendetta overwhelm slow setups.',samoa:'Compact geometry rewards aggressive point presence with D.Mon, Reinhardt, Symmetra and Torbjörn.',nepal:'Classic close-quarters control where brawl tanks, Symmetra and Mei lock down entries.',colosseo:'A long central trench into tight Roman corners where Doomfist, Vendetta and Tracer feast.',esperanca:'Interconnected lanes reward mobile comps that collapse on isolated targets.',runasapi:'Compact courtyard walls let Vendetta, Genji and D.Mon gap-close without taking poke.',new_queen_street:'Endless skirmish angles make self-sufficient mobile heroes and Support Sombra lethal.',suravasa:'Fast rotations reward mobile brawl/dive hybrids; Torbjörn turrets punish disorganized entries.',aatlis:'A resort flashpoint where D.Mon, Doomfist, Vendetta and Doctrine dictate transitions.',new_junk_city:'Tightly walled arenas where Reinhardt, D.Mon, Vendetta and Torbjörn thrive.',hanaoka:'Rapid back-and-forth clash where Doctrine surges, D.Mon and Vendetta snowball captures.',throne_of_anubis:'Close-quarters temple corridors favor Reinhardt, Symmetra TP setups, D.Mon and Support Sombra.'};
-const MODES=['ALL','Hybrid','Escort','Control','Push','Flashpoint','Clash'];
-const PRESETS=[['Enemy Dive',['Winston','Tracer','Genji','Sombra','Jetpack Cat']],['Enemy Grim Brawl',['D.Mon','Vendetta','Symmetra','Doctrine','Brigitte']],['Enemy Sniper Poke',['Sigma','Widowmaker','Sierra','Zenyatta','Ana']]];
-const KEY='ow5_artifact_v1';
-// ---------- STATE ----------
-const S={step:1,rank:'high',role:'TANK',map:'grimsvotn',mode:'ALL',q:'',bans:[null,null,null,null],enemy:[null,null,null,null,null],modal:null,insp:null,picker:null,pf:'ALL',pq:'',synced:'Built-in snapshot',busy:false,
-heroes:HEROES0.map(h=>({...h})),
-prof:{tag:'LightArrow#21557',comfort:false,auto:false,ranks:{TANK:'high',DAMAGE:'high',SUPPORT:'high'},mains:[],pwr:{}}};
-try{const v=JSON.parse(localStorage.getItem(KEY)||'null');if(v){Object.assign(S.prof,v.prof||{});S.synced=v.synced||S.synced;(v.stats||[]).forEach(s=>{const h=S.heroes.find(x=>x.id===s[0]);if(h){h.wr=s[1];h.pr=s[2];h.br=s[3]}})}}catch(e){}
-function save(){try{localStorage.setItem(KEY,JSON.stringify({prof:S.prof,synced:S.synced,stats:S.heroes.map(h=>[h.id,h.wr,h.pr,h.br])}))}catch(e){}}
-const CFG={region:'americas'};
-try{Object.assign(CFG,JSON.parse(localStorage.getItem('ow5_cfg')||'{}'))}catch(e){}
-const saveCfg=()=>{try{localStorage.setItem('ow5_cfg',JSON.stringify(CFG))}catch(e){}};
-S.ps={st:'idle',msg:'Not checked yet.'};S.sources=[];
-// ---------- ENGINE ----------
-const mapO=()=>MAPS.find(m=>m.id===S.map)||MAPS[0];
-const banned=()=>S.bans.filter(Boolean),enemies=()=>S.enemy.filter(Boolean);
-function recommend(){
-const m=mapO(),ri=RI[S.rank],P=S.prof,bn=banned(),en=enemies();
-const pool=S.heroes.filter(h=>!bn.includes(h.name)&&(S.role==='ALL'||h.role===S.role));
-const sc=pool.map(h=>{
-const mapFit=(h.aff[0]*m.b/100+h.aff[1]*m.d/100+h.aff[2]*m.p/100)*10,rankFit=(h.rw[ri]||7)*10,wrB=(h.wr-50)*4.5;
-let sp=0;
-if(h.id==='widowmaker'&&m.p>=55)sp+=24;
-if(h.id==='symmetra'&&['lijiang','samoa','busan','nepal','grimsvotn','kings_row'].includes(m.id))sp+=18;
-if(h.id==='torbjorn'&&(ri===0||m.mode==='Flashpoint'||m.id==='grimsvotn'))sp+=14;
-if(h.id==='winston'&&m.d>=65)sp+=16;if(h.id==='sigma'&&m.p>=60)sp+=16;
-if(h.id==='reinhardt'&&m.b>=60&&ri<=1)sp+=15;if(h.id==='doctrine')sp+=12;
-const main=P.mains.includes(h.id),pw=typeof P.pwr[h.id]==='number'?P.pwr[h.id]:null;
-let cb=0;if(P.comfort&&main){cb=14;if(pw&&pw>50)cb+=(pw-50)*1.4}
-const ce=en.filter(e=>h.str.includes(e)),te=en.filter(e=>h.ctr.includes(e));
-const total=mapFit*.48+rankFit*.32+wrB+sp+ce.length*14-te.length*12+cb;
-let w=h.wr+(mapFit-65)*.08+(rankFit-80)*.05+ce.length*1.4-te.length*1.3+(P.comfort&&main?1.2:0);
-if(P.comfort&&pw)w=w*.65+pw*.35;
-if(h.id==='widowmaker'&&m.p>=60&&!te.length)w=Math.max(w,54.7);
-if(h.id==='torbjorn'&&ri===0)w=Math.max(w,56.5);
-w=Math.min(64.5,Math.max(43,w)).toFixed(1);
-return{...h,total,cwr:w,tier:total>=82?'S+':total>=73?'S':'A',ce,te,main,pw}});
-sc.sort((a,b)=>b.total-a.total);
-if(S.role==='ALL')return['TANK','DAMAGE','SUPPORT'].map(r=>sc.find(h=>h.role===r)).filter(Boolean);
-return sc.slice(0,3)}
-function bansCalc(){
-const m=mapO(),P=S.prof,bn=banned(),ri=RI[S.rank],H=n=>S.heroes.find(h=>h.name===n);
-const mains=S.heroes.filter(h=>P.mains.includes(h.id)&&(S.role==='ALL'||h.role===S.role)),prot=mains.map(h=>h.name);
-const T=[],add=(n,threat,reason,arr)=>{const h=H(n);if(h)arr.push({name:n,role:h.role,br:h.br,wr:h.wr,threat,reason,hero:h})};
-if(P.comfort&&mains.length){const c={};mains.forEach(mh=>mh.ctr.forEach(x=>(c[x]=c[x]||[]).push(mh.name)));
-Object.entries(c).forEach(([n,ms])=>{if(!prot.includes(n))add(n,'COUNTERS YOUR ★ '+ms[0].toUpperCase(),n+' is a primary hard-counter to your starred main ('+ms.join(' & ')+') on '+m.name+'.',T)})}
-if(m.p>=55||['havana','circuit_royal','junkertown','ilios'].includes(m.id))add('Widowmaker','CRITICAL MAP THREAT','On '+m.name+'’s long sightlines Widowmaker locks down entire lanes. Banning her lets your team rotate without one-shot anxiety.',T);
-if(ri===0){add('Orisa','FRONTLINE DENIAL','Heavily banned in Metal ranks. Removing Orisa stops enemy tanks from shutting down your Reinhardt or D.Mon.',T);add('Torbjörn','TURRET LOCKDOWN','Uncontested turrets punish flankers in Metal. Ban him if your team wants Vendetta, Genji or Dive.',T)}
-if(m.d>=50)add('Doomfist','BACKLINE DISRUPTOR','Doomfist abuses '+m.name+'’s verticality to punch supports out of position before peel arrives.',T);
-if(S.role==='TANK')add('Zenyatta','TANK BUSTER','Discord Orb plus Support Sombra’s debuff melts frontline health bars in seconds.',T);
-else if(S.role==='SUPPORT')add('Vendetta','SUPPORT ASSASSIN','Crimson Lunge and Parry Riposte make her the deadliest melee flanker against your backline.',T);
-else if(S.role==='DAMAGE')add('Cassidy','FLANK SHUTDOWN','His Hinder grenade shuts down Tracer, Vendetta and Genji off-angles.',T);
-const G=[];
-add('Jetpack Cat','#1 MOST BANNED','Highest ban rate in Overwatch. Perma-flight and tow-cable rescues warp vertical map control.',G);
-add('D.Mon','BAN TITAN','Highest win-rate tank of the season. Unless your tank first-picks D.Mon, ban her.',G);
-add('Sombra','REWORK MENACE','Her damage/healing-reduction debuff and burst heal swing every skirmish.',G);
-add('Doctrine','TEMPO ANCHOR','If neither of your supports locks Doctrine, ban him so the enemy can’t use his aura.',G);
-add('Tracer','HIGH-ELO PREDATOR','In Diamond+ lobbies Tracer with Sombra or Doctrine is nearly unpeelable.',G);
-const ok=b=>!bn.includes(b.name)&&!(P.comfort&&prot.includes(b.name));
-const out=[];[...T.filter(ok).slice(0,2),...G.filter(ok)].forEach(b=>{if(out.length<3&&!out.some(o=>o.name===b.name))out.push(b)});return out}
-// ---------- VIEW HELPERS ----------
-const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const OF='https://overfast-api.tekrop.fr';
-function logoFail(i){if(!i.dataset.t){i.dataset.t='1';i.src='logo.svg'}else i.parentNode.style.display='none'}
-const RSVG={TANK:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v8c0 5.5-3.8 9.8-8 11-4.2-1.2-8-5.5-8-11V4zm3 3v5c0 3.7 2.1 6.7 5 7.8 2.9-1.1 5-4.1 5-7.8V7H7z"/></svg>',DAMAGE:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 3l2 4v14H4V7l2-4zm6 0l2 4v14h-4V7l2-4zm6 0l2 4v14h-4V7l2-4z"/></svg>',SUPPORT:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6V3z"/></svg>',ALL:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l10 5-10 5L2 7l10-5zm0 11.5L19.5 10 22 11.3l-10 5-10-5L4.5 10 12 13.5zm0 4.5l7.5-3.5L22 15.8l-10 5-10-5 2.5-1.3L12 18z"/></svg>'};
-const ROLEIMG={};
-const rIcon=(r,c)=>{const u=ROLEIMG[String(r).toLowerCase()];return u&&r!=='ALL'?`<span class="ri ${c||''}"><img src="${esc(u)}" alt="" referrerpolicy="no-referrer" onerror="this.parentNode.innerHTML=RSVG['${r}']"></span>`:`<span class="ri ${c||''}">${RSVG[r]||RSVG.ALL}</span>`};
-const RC={metal:'#d97706',mid:'#10b981',high:'#06b6d4',top:'#c026d3'};
+const KEY='ow_draft_v2';
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nk=x=>String(x||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
-const PORT={},MAPIMG={};
-const av=(h,sz)=>{const u=PORT[nk(h.name)]||PORT[nk(h.id)];return`<div class="av ${h.role}" ${sz?`style="width:${sz}px;height:${sz}px"`:''}><span>${esc(h.name.slice(0,3).toUpperCase())}</span>${u?`<img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:''}</div>`};
-const mapImg=m=>{const u=MAPIMG[nk(m.name)]||MAPIMG[nk(m.id)];return u?`<img class="mbg" src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:''};
-const rk=id=>RANKS[RI[id]];
-function mapList(){const q=S.q.toLowerCase();return MAPS.filter(m=>(S.mode==='ALL'||m.mode===S.mode)&&(m.name.toLowerCase().includes(q)||m.tag.toLowerCase().includes(q))).sort((a,b)=>a.name.localeCompare(b.name)).map(m=>`<button class="card ${m.id===S.map?'sel':''}" data-a="map" data-v="${m.id}" style="position:relative;overflow:hidden">${mapImg(m)}<div class="row"><span class="tag">${m.mode}</span>${m.isNew?'<span class="tag a">NEW</span>':''}</div><div class="nm tr" style="margin-top:4px">${esc(m.name)}</div><div class="mut tr">${esc(m.tag)}</div></button>`).join('')||'<div class="mut">No maps match.</div>'}
-function poolList(){const q=S.pq.toLowerCase(),P=S.prof;return S.heroes.filter(h=>(S.pf==='ALL'||h.role===S.pf)&&(!q||h.name.toLowerCase().includes(q)||h.sub.toLowerCase().includes(q))).sort((a,b)=>(P.mains.includes(b.id)-P.mains.includes(a.id))||a.name.localeCompare(b.name)).map(h=>{const mn=P.mains.includes(h.id);return`<div class="card ${mn?'sel':''}" data-a="main" data-v="${h.id}" style="cursor:pointer"><div class="rl">${av(h,30)}<div style="min-width:0"><div class="tr" style="font-weight:800">${mn?'★ ':''}${esc(h.name)}</div><div class="mut">${h.wr}% WR</div></div></div>${mn?`<div class="row" style="margin-top:6px" onclick="event.stopPropagation()"><span class="mut">My WR%</span><input type="number" step="0.5" min="25" max="95" value="${P.pwr[h.id]??h.wr}" data-wr="${h.id}" style="width:64px"></div>`:''}</div>`}).join('')}
-function pickRow(h,i){const P=S.prof;return`<div class="card pk" data-a="insp" data-v="pick:${i}"><span class="tag a">#${i+1}</span>${av(h)}<div class="tx"><div class="nr"><span class="nm">${esc(h.name)}</span><span class="tag">${h.tier}</span>${NEWH[h.id]?`<span class="tag a">${esc(NEWH[h.id])}</span>`:''}${P.comfort&&h.main?'<span class="tag a">★ Main</span>':''}${h.ce.length?`<span class="tag" style="color:var(--gd)">+${h.ce.length} counter</span>`:''}</div><div class="tr2">${P.comfort&&h.main&&h.pw?`Your WR ${h.pw}% · `:''}${esc(h.sub)} · best with ${esc(h.syn.slice(0,2).join(', '))}</div></div><div class="st"><div><div class="wr">${h.cwr}%</div><div class="mut">Win rate</div></div><button class="b r" data-a="ban" data-v="${esc(h.name)}">Ban</button></div></div>`}
-function banRow(b,i){return`<div class="card pk" data-a="insp" data-v="ban:${i}"><span class="tag d">#${i+1}</span>${av(b.hero)}<div class="tx"><div class="nr"><span class="nm">${esc(b.name)}</span><span class="tag d">${esc(b.threat)}</span></div><div class="tr2">${esc(b.reason)}</div></div><div class="st"><div><div class="wr d">${b.br}%</div><div class="mut">Ban rate</div></div><button class="b" data-a="ban" data-v="${esc(b.name)}">✓ Ban</button></div></div>`}
-// ---------- RENDER ----------
+const cap=s=>String(s||'').replace(/[-_]+/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+const f1=n=>(Math.round(n*10)/10).toFixed(1);
+const sg=n=>(n>=0?'+':'−')+f1(Math.abs(n));
+// ---------- state ----------
+let D=null;                                  // data/meta.json written by the daily workflow
+const LIVE={heroes:[],maps:[],roles:[],ok:false};   // live OverFast roster (new heroes/maps show up here first)
+let H=[],M=[],RL=[],CTR_BY={};               // merged heroes, maps, roles, "who does this hero beat" index
+const S={step:1,rank:'all',role:'TANK',map:null,mode:'ALL',q:'',bans:[null,null,null,null],enemy:[null,null,null,null,null],modal:null,insp:null,picker:null,pf:'ALL',pq:'',busy:false,loaded:false,
+prof:{tag:'LightArrow#21557',comfort:false,auto:false,ranks:{},mains:[],pwr:{}},ps:{st:'idle',msg:'Not checked yet.'}};
+try{const v=JSON.parse(localStorage.getItem(KEY)||'null');if(v&&v.prof)Object.assign(S.prof,v.prof)}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify({prof:S.prof}))}catch(e){}};
+// ---------- data ----------
+async function loadMeta(bust){
+try{const r=await fetch('data/meta.json'+(bust?'?t='+Date.now():''),{cache:'no-cache'});D=r.ok?await r.json():null}catch(e){D=null}}
+async function loadLive(){
+try{const[h,m,r]=await Promise.allSettled([fetch(OF+'/heroes').then(x=>x.json()),fetch(OF+'/maps').then(x=>x.json()),fetch(OF+'/roles').then(x=>x.json())]);
+LIVE.ok=false;
+if(h.status==='fulfilled'&&Array.isArray(h.value)){LIVE.heroes=h.value;LIVE.ok=true}
+if(m.status==='fulfilled'&&Array.isArray(m.value))LIVE.maps=m.value;
+if(r.status==='fulfilled'&&Array.isArray(r.value))LIVE.roles=r.value}catch(e){}}
+function rebuild(){
+const hm=new Map();
+((D&&D.heroes)||[]).forEach(h=>hm.set(h.key,{key:h.key,name:h.name,role:String(h.role).toUpperCase(),portrait:h.portrait||'',fresh:false}));
+LIVE.heroes.forEach(h=>{if(!h.key||!h.name||!h.role)return;const o=hm.get(h.key)||{key:h.key,name:h.name,role:'',portrait:'',fresh:!!D};o.name=h.name;o.role=String(h.role).toUpperCase();o.portrait=h.portrait||o.portrait;hm.set(h.key,o)});
+H=[...hm.values()].filter(h=>h.name&&h.role).sort((a,b)=>a.name.localeCompare(b.name));
+const mm=new Map();
+((D&&D.maps)||[]).forEach(m=>mm.set(m.key,{key:m.key,name:m.name,modes:m.modes||[],img:m.img||'',fresh:false}));
+const modeSet=new Set([...mm.values()].flatMap(m=>m.modes));
+LIVE.maps.forEach(m=>{const k=nk(m.name),modes=m.gamemodes||[],ex=mm.get(k);
+if(ex){if(m.screenshot)ex.img=m.screenshot;if(!ex.modes.length)ex.modes=modes;return}
+if(modeSet.size&&modes.some(x=>modeSet.has(x)))mm.set(k,{key:k,name:m.name,modes,img:m.screenshot||'',fresh:true})});
+M=[...mm.values()].sort((a,b)=>a.name.localeCompare(b.name));
+RL=(LIVE.roles.length?LIVE.roles:(D&&D.roles)||[]).map(r=>({id:String(r.key).toUpperCase(),name:r.name,desc:r.description||'',icon:r.icon||''}));
+CTR_BY={};const c=(D&&D.counters)||{};
+Object.keys(c).forEach(t=>Object.keys(c[t]).forEach(hk=>{(CTR_BY[hk]=CTR_BY[hk]||[]).push({key:t,r:c[t][hk][0],l:c[t][hk][1]})}));
+}
+function defaults(){
+const divs=(D&&D.divisions)||[];
+if(!divs.some(d=>d.key===S.rank))S.rank=divs.length?divs[0].key:'all';
+if(!M.some(m=>m.key===S.map))S.map=M.length?M[0].key:null;
+if(RL.length&&S.role!=='ALL'&&!RL.some(r=>r.id===S.role))S.role=RL[0].id}
+const hk=k=>H.find(h=>h.key===k);
+const hn=n=>H.find(h=>h.name===n);
+const heroByKey=k=>H.find(h=>h.key===k||nk(h.name)===nk(k)||nk(h.key)===nk(k));
+const mapO=()=>M.find(m=>m.key===S.map)||null;
+const divLabel=k=>{const d=((D&&D.divisions)||[]).find(x=>x.key===k);return d?d.label:cap(k)};
+const banned=()=>S.bans.filter(Boolean);
+const enemies=()=>S.enemy.filter(Boolean).map(hn).filter(Boolean);
+const cwOf=h=>(D&&D.cw&&D.cw[h.key])||{};
+const rt=(h,d)=>{const r=D&&D.rates&&D.rates[d||S.rank];return r&&r[h.key]||null};
+const mapRt=(h,mk)=>{const m=D&&D.mapRates&&D.mapRates[mk||S.map];return m&&m[h.key]||null};
+const mapDelta=h=>{const m=mapRt(h),a=rt(h,'all');return m&&a?m[0]-a[0]:0};
+const LBL={duel:'wins the 1v1',team:'team pressure',mixed:'mixed threat'};
+// how much hero h counters enemy e: [rating,label] (positive = h counters e)
+function ctr(h,e){const c=D&&D.counters;if(!c)return null;
+const a=c[e.key]&&c[e.key][h.key];if(a)return a;
+const b=c[h.key]&&c[h.key][e.key];if(b)return[-b[0],b[1]];return null}
+const countersOf=(h,n)=>((D&&D.counters&&D.counters[h.key])?Object.entries(D.counters[h.key]).map(([k,v])=>({h:hk(k),r:v[0],l:v[1]})).filter(x=>x.h&&x.r>0).sort((a,b)=>b.r-a.r).slice(0,n):[]);
+const beatsOf=(h,n)=>(CTR_BY[h.key]||[]).map(x=>({h:hk(x.key),r:x.r,l:x.l})).filter(x=>x.h&&x.r>0).sort((a,b)=>b.r-a.r).slice(0,n);
+// ---------- engine ----------
+function recommend(){
+if(!D||!D.rates)return[];
+const bn=banned(),en=enemies(),P=S.prof;
+const sc=[];
+H.forEach(h=>{if(bn.includes(h.name)||(S.role!=='ALL'&&h.role!==S.role))return;
+const r=rt(h);if(!r||r[1]<1)return;
+const md=mapDelta(h);let cb=0;const ce=[],te=[];
+en.forEach(e=>{const c=ctr(h,e);if(!c)return;cb+=c[0]*0.25;if(c[0]>=2)ce.push({e:e.name,r:c[0],l:c[1]});else if(c[0]<=-2)te.push({e:e.name,r:-c[0],l:c[1]})});
+cb=Math.max(-8,Math.min(8,cb));
+const main=P.mains.includes(h.key),pw=P.pwr[h.key];
+const cf=P.comfort&&main?1.5+(typeof pw==='number'&&pw>50?(pw-50)*.1:0):0;
+const wr=r[0]+md;
+sc.push({h,r,wr,md,cb,ce,te,main,pw,cf,total:wr+cb+cf})});
+sc.sort((a,b)=>b.total-a.total);
+if(S.role==='ALL')return RL.map(ro=>sc.find(x=>x.h.role===ro.id)).filter(Boolean);
+return sc.slice(0,3)}
+function bansCalc(picks){
+if(!D||!D.rates)return[];
+const bn=banned(),P=S.prof;
+const mainsRole=H.filter(h=>P.comfort&&P.mains.includes(h.key)&&(S.role==='ALL'||h.role===S.role)).slice(0,3);
+const tg=[];[...mainsRole,...picks.map(p=>p.h)].forEach(h=>{if(!tg.includes(h))tg.push(h)});
+const T=tg.slice(0,4),W=[1,.7,.5,.35],protect=new Set(P.comfort?P.mains:[]);
+const out=[];
+H.forEach(h=>{if(bn.includes(h.name)||protect.has(h.key)||T.includes(h))return;
+const r=rt(h);if(!r||r[1]<1)return;
+let s=0,best=null;
+T.forEach((t,i)=>{const c=ctr(h,t);if(c&&c[0]>0){const v=c[0]*W[i];s+=v;if(!best||v>best.v)best={v,t:t.name,r:c[0],l:c[1]}}});
+const wr=r[0]+mapDelta(h);
+out.push({h,r,wr,best,total:s+(wr-50)*0.8})});
+out.sort((a,b)=>b.total-a.total);
+return out.slice(0,3)}
+function banReason(b){const p=[];
+if(b.best)p.push('Counters your '+b.best.t+' ('+sg(b.best.r)+(b.best.l?', '+LBL[b.best.l]:'')+')');
+p.push(f1(b.wr)+'% win rate'+(mapO()?' here':'')+' at '+divLabel(S.rank));
+if(b.r[2]!=null)p.push(f1(b.r[2])+'% ban rate');
+return p.join(' · ')}
+function pickLines(x){const h=x.h,m=mapO(),L=[];
+L.push('Official win rate at '+divLabel(S.rank)+': '+f1(x.r[0])+'% ('+f1(x.r[1])+'% pick'+(x.r[2]!=null?', '+f1(x.r[2])+'% ban':'')+').');
+const mr=mapRt(h);if(m&&mr)L.push('On '+m.name+': '+f1(mr[0])+'% across all ranks ('+sg(x.md)+' points vs. its all-maps rate).');
+x.ce.forEach(c=>L.push('Counters '+c.e+' ('+sg(c.r)+(c.l?', '+LBL[c.l]:'')+').'));
+x.te.forEach(c=>L.push(c.e+' counters this hero ('+sg(c.r)+(c.l?', '+LBL[c.l]:'')+').'));
+const cw=cwOf(h);if(cw.tier||cw.lean)L.push('Counterwatch: '+(cw.tier?'tier '+cw.tier:'')+(cw.tier&&cw.lean?', ':'')+(cw.lean?'leans '+cw.lean:'')+'.');
+if(S.prof.comfort&&x.main&&typeof x.pw==='number')L.push('Your own win rate on this hero: '+f1(x.pw)+'%.');
+return L}
+// ---------- view helpers ----------
+const RSVG={TANK:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v8c0 5.5-3.8 9.8-8 11-4.2-1.2-8-5.5-8-11V4zm3 3v5c0 3.7 2.1 6.7 5 7.8 2.9-1.1 5-4.1 5-7.8V7H7z"/></svg>',DAMAGE:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 3l2 4v14H4V7l2-4zm6 0l2 4v14h-4V7l2-4zm6 0l2 4v14h-4V7l2-4z"/></svg>',SUPPORT:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6V3z"/></svg>',ALL:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l10 5-10 5L2 7l10-5zm0 11.5L19.5 10 22 11.3l-10 5-10-5L4.5 10 12 13.5zm0 4.5l7.5-3.5L22 15.8l-10 5-10-5 2.5-1.3L12 18z"/></svg>'};
+const rIcon=(id,c)=>{const r=RL.find(x=>x.id===id);return r&&r.icon&&id!=='ALL'?`<span class="ri ${c||''}"><img src="${esc(r.icon)}" alt="" referrerpolicy="no-referrer" onerror="this.parentNode.innerHTML=RSVG['${id}']||RSVG.ALL"></span>`:`<span class="ri ${c||''}">${RSVG[id]||RSVG.ALL}</span>`};
+const av=(h,sz)=>`<div class="av ${h.role}" ${sz?`style="width:${sz}px;height:${sz}px"`:''}><span>${esc(h.name.slice(0,3).toUpperCase())}</span>${h.portrait?`<img src="${esc(h.portrait)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:''}</div>`;
+const mapImg=m=>m&&m.img?`<img class="mbg" src="${esc(m.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:'';
+function ago(ms){if(isNaN(ms))return 'at an unknown time';const d=Math.floor((Date.now()-ms)/864e5);return d<=0?'today':d===1?'yesterday':d+' days ago'}
+function topAt(div){const r=D&&D.rates&&D.rates[div];if(!r)return'';return H.filter(h=>r[h.key]&&r[h.key][1]>=1).sort((a,b)=>r[b.key][0]-r[a.key][0]).slice(0,3).map(h=>h.name+' '+f1(r[h.key][0])+'%').join(' · ')}
+function topOnMap(mk){const r=D&&D.mapRates&&D.mapRates[mk];if(!r)return'';return H.filter(h=>r[h.key]&&r[h.key][1]>=1).sort((a,b)=>r[b.key][0]-r[a.key][0]).slice(0,3).map(h=>h.name+' '+f1(r[h.key][0])+'%').join(' · ')}
+function noData(){return`<div class="pn"><h2 class="nm">No data file yet</h2><p>This page gets everything from <b>data/meta.json</b>, which a daily GitHub workflow writes. It doesn’t exist in your repo yet.</p><p class="mut">Open your repo on GitHub → <b>Actions</b> tab → <b>Update data</b> → <b>Run workflow</b>. When it finishes (a few minutes), come back and press <b>Refresh</b>.</p></div>`}
+// ---------- views ----------
+function psLine(){const p=S.ps,c=p.st==='public'?'ok':p.st==='idle'||p.st==='checking'?'mut':'bad';return`<div class="mut ${c}" style="font-weight:600">${esc(p.msg)}</div>`}
+function mapList(){const q=S.q.toLowerCase();return M.filter(m=>(S.mode==='ALL'||m.modes.includes(S.mode))&&m.name.toLowerCase().includes(q)).map(m=>{const t=topOnMap(m.key);return`<button class="card ${m.key===S.map?'sel':''}" data-a="map" data-v="${esc(m.key)}" style="position:relative;overflow:hidden">${mapImg(m)}<div class="row"><span class="tag">${esc(m.modes.map(cap).join(' / ')||'Map')}</span>${m.fresh||!D||!D.mapRates||!D.mapRates[m.key]?'<span class="tag d">no stats yet</span>':''}</div><div class="nm tr" style="margin-top:4px">${esc(m.name)}</div><div class="mut tr">${esc(t)}</div></button>`}).join('')||'<div class="mut">No maps match.</div>'}
+function poolList(){const q=S.pq.toLowerCase(),P=S.prof;return H.filter(h=>(S.pf==='ALL'||h.role===S.pf)&&(!q||h.name.toLowerCase().includes(q))).sort((a,b)=>(P.mains.includes(b.key)-P.mains.includes(a.key))||a.name.localeCompare(b.name)).map(h=>{const mn=P.mains.includes(h.key),r=rt(h,'all');return`<div class="card ${mn?'sel':''}" data-a="main" data-v="${esc(h.key)}" style="cursor:pointer"><div class="rl">${av(h,30)}<div style="min-width:0"><div class="tr" style="font-weight:800">${mn?'★ ':''}${esc(h.name)}</div><div class="mut">${r?f1(r[0])+'% WR':'no stats yet'}</div></div></div>${mn?`<div class="row" style="margin-top:6px" onclick="event.stopPropagation()"><span class="mut">My WR%</span><input type="number" step="0.5" min="25" max="95" value="${P.pwr[h.key]!=null?P.pwr[h.key]:''}" placeholder="—" data-wr="${esc(h.key)}" style="width:64px"></div>`:''}</div>`}).join('')}
+function pickRow(x,i){const h=x.h,P=S.prof,cw=cwOf(h);
+const bits=[f1(x.r[1])+'% pick'];if(x.r[2]!=null)bits.push(f1(x.r[2])+'% ban');if(mapO()&&mapRt(h))bits.push(sg(x.md)+' on this map');
+return`<div class="card pk" data-a="insp" data-v="pick:${i}"><span class="tag a">#${i+1}</span>${av(h)}<div class="tx"><div class="nr"><span class="nm">${esc(h.name)}</span>${cw.tier?`<span class="tag">CW ${esc(cw.tier)}</span>`:''}${cw.lean?`<span class="tag">${esc(cw.lean)}</span>`:''}${P.comfort&&x.main?'<span class="tag a">★ Main</span>':''}${x.ce.length?`<span class="tag" style="color:var(--gd)">+${x.ce.length} counter</span>`:''}</div><div class="tr2">${esc(bits.join(' · '))}</div></div><div class="st"><div><div class="wr">${f1(x.wr)}%</div><div class="mut">Win rate</div></div><button class="b r" data-a="ban" data-v="${esc(h.name)}">Ban</button></div></div>`}
+function banRow(b,i){return`<div class="card pk" data-a="insp" data-v="ban:${i}"><span class="tag d">#${i+1}</span>${av(b.h)}<div class="tx"><div class="nr"><span class="nm">${esc(b.h.name)}</span>${b.best?'<span class="tag d">counters your pick</span>':''}</div><div class="tr2">${esc(banReason(b))}</div></div><div class="st"><div><div class="wr d">${b.r[2]!=null?f1(b.r[2])+'%':'—'}</div><div class="mut">Ban rate</div></div><button class="b" data-a="ban" data-v="${esc(b.h.name)}">✓ Ban</button></div></div>`}
 function header(){const P=S.prof,st=S.ps.st,pc=st==='public'?'public':st==='checking'?'checking':'off';
 const label=st==='public'?'Public · '+P.mains.length+' mains':st==='checking'?'Checking…':(st==='private'?'Private':'Not public')+(P.comfort&&P.mains.length?' · '+P.mains.length+' custom':' · pure meta');
 const col=st==='public'?'var(--gd)':st==='checking'?'var(--cy)':'var(--rd)';
-return`<div class="hd"><div class="rl"><div class="crest"><img src="logo.png" alt="Overwatch" onerror="logoFail(this)"></div><div style="min-width:0"><div class="ttl">Overwatch <b>S5 Draft</b><span class="badge">Grim Doctrine</span></div><div class="sub"><i class="dot ${S.busy?'pulse':''}" style="background:${S.busy?'var(--ac)':'var(--gd)'}"></i><span class="tr">${S.busy?'Syncing…':esc(S.synced)}</span></div></div></div>
-<div class="rl" style="flex-wrap:wrap"><button class="pill ${pc}" data-a="modal" data-v="profile" title="Career profile"><span class="pa">${P.avatar?`<img src="${esc(P.avatar)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">`:esc((P.tag[0]||'?').toUpperCase())}</span><span><b>${esc(P.tag.split('#')[0])}</b><small style="color:${col}">${esc(label)}</small></span></button><button class="b p" data-a="sync">${S.busy?'…':'Sync'}</button><button class="b" data-a="modal" data-v="override">Override</button><button class="b" data-a="modal" data-v="patch">Guide</button></div></div>`}
-function nav(){const m=mapO(),v=[rk(S.rank)[2],ROLES.find(r=>r[0]===S.role)[1],m.name,'3 Picks / 3 Bans'];return`<div class="nav">${v.map((x,i)=>`<button class="${S.step===i+1?'on':S.step>i+1?'done':''}" data-a="step" data-v="${i+1}"><small>${S.step>i+1?'✓ ':''}${i+1}. ${['Rank','Role','Map','Draft'][i]}</small><span>${esc(x)}</span></button>`).join('')}</div>`}
+const t=D?Date.parse(D.updated):NaN,days=isNaN(t)?99:(Date.now()-t)/864e5,stale=!D||days>3;
+const sub=S.busy?'Refreshing…':D?'Data '+ago(t)+(D.patch&&D.patch.date?' · patch '+D.patch.date:''):'No data file yet';
+const sn=D&&D.season?D.season.number:null;
+return`<div class="hd"><div class="rl"><div class="crest"><img src="logo.png" alt="Overwatch" onerror="logoFail(this)"></div><div style="min-width:0"><div class="ttl">Overwatch <b>${sn?'S'+sn+' ':''}Draft</b></div><div class="sub"><i class="dot ${S.busy?'pulse':''}" style="background:${S.busy?'var(--ac)':stale?'var(--rd)':'var(--gd)'}"></i><span class="tr">${esc(sub)}</span></div></div></div>
+<div class="rl" style="flex-wrap:wrap"><button class="pill ${pc}" data-a="modal" data-v="profile" title="Career profile"><span class="pa">${P.avatar?`<img src="${esc(P.avatar)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">`:esc((P.tag[0]||'?').toUpperCase())}</span><span><b>${esc(P.tag.split('#')[0])}</b><small style="color:${col}">${esc(label)}</small></span></button><button class="b p" data-a="refresh">${S.busy?'…':'Refresh'}</button><button class="b" data-a="modal" data-v="data">Data</button></div></div>`}
+function nav(){const m=mapO(),ro=S.role==='ALL'?'Flex 5v5':(RL.find(r=>r.id===S.role)||{}).name||cap(S.role),v=[divLabel(S.rank),ro,m?m.name:'—','3 Picks / 3 Bans'];return`<div class="nav">${v.map((x,i)=>`<button class="${S.step===i+1?'on':S.step>i+1?'done':''}" data-a="step" data-v="${i+1}"><small>${S.step>i+1?'✓ ':''}${i+1}. ${['Rank','Role','Map','Draft'][i]}</small><span>${esc(x)}</span></button>`).join('')}</div>`}
 function step(){
-if(S.step===1)return`<div class="pn"><div class="mut">STEP 1 OF 4</div><h2 class="nm">Select your rank</h2><div class="g g2" style="margin-top:8px">${RANKS.map(r=>`<button class="card ${S.rank===r[0]?'sel':''}" data-a="rank" data-v="${r[0]}"><span class="tag"><i class="dot" style="background:${RC[r[0]]};margin-right:5px"></i>${r[3]} · ${r[4]}</span><div class="nm" style="margin-top:4px">${r[1]}</div><div class="mut">${r[5]}</div></button>`).join('')}</div></div>`;
-if(S.step===2)return`<div class="pn"><div class="mut">STEP 2 OF 4 · ${rk(S.rank)[2]}</div><h2 class="nm">Select your role</h2><div class="g g2" style="margin-top:8px">${ROLES.map(r=>`<button class="card ${S.role===r[0]?'sel':''}" data-a="role" data-v="${r[0]}"><div class="rl"><span class="rib ${r[0]}c">${rIcon(r[0])}</span><div style="min-width:0"><div class="nm">${r[1]}${S.prof.ranks[r[0]]&&r[0]!=='ALL'?` <span class="tag a">${rk(S.prof.ranks[r[0]])[2]}</span>`:''}</div><div class="mut">${r[2]}</div></div></div></button>`).join('')}</div></div>`;
-if(S.step===3)return`<div class="pn"><div class="mut">STEP 3 OF 4</div><h2 class="nm">Select competitive map</h2><div class="pills" style="margin:8px 0">${MODES.map(x=>`<button class="b ${S.mode===x?'on2':''}" data-a="mode" data-v="${x}">${x}</button>`).join('')}</div><input id="mq" placeholder="Quick filter map…" value="${esc(S.q)}" style="width:100%;margin-bottom:8px"><div id="maplist" class="g g3">${mapList()}</div></div>`;
-const m=mapO(),picks=recommend(),bs=bansCalc();
-return`<div class="pn" style="position:relative;overflow:hidden">${mapImg(m)}<div class="row"><div><span class="tag a">${m.mode}</span> <span class="nm">${esc(m.name)}</span><div class="mut">${esc(MSUM[m.id]||m.tag)}</div><div class="mut">Tap any card for details</div></div><div class="mut" style="text-align:right">Brawl ${m.b}% · Dive ${m.d}% · Poke ${m.p}%</div></div></div>
-<div class="g g2"><div class="pn"><h3 class="nm">Top 3 picks</h3><div class="g" style="margin-top:8px">${picks.map(pickRow).join('')||'<div class="mut">No heroes available.</div>'}</div></div><div class="pn"><h3 class="nm">Top 3 priority bans</h3><div class="g" style="margin-top:8px">${bs.map(banRow).join('')}</div></div></div>
+if(!D&&S.loaded)return noData();
+if(!D)return'<div class="pn"><div class="mut">Loading…</div></div>';
+if(S.step===1){const divs=D.divisions||[];return`<div class="pn"><div class="mut">STEP 1 OF 4</div><h2 class="nm">Select your rank</h2><div class="g g2" style="margin-top:8px">${divs.map(d=>{const mine=Object.keys(S.prof.ranks).filter(r=>S.prof.ranks[r]===d.key);return`<button class="card ${S.rank===d.key?'sel':''}" data-a="rank" data-v="${esc(d.key)}"><div class="row"><div class="nm">${esc(d.label)}</div>${mine.length?`<span class="tag a">Your ${mine.map(r=>esc(cap(r))).join(' / ')}</span>`:''}</div><div class="mut">Top win rates: ${esc(topAt(d.key)||'no data')}</div></button>`}).join('')}</div><div class="mut" style="margin-top:8px">Official Blizzard rates, region ${esc(D.region?cap(D.region):'default')}.</div></div>`}
+if(S.step===2)return`<div class="pn"><div class="mut">STEP 2 OF 4 · ${esc(divLabel(S.rank))}</div><h2 class="nm">Select your role</h2><div class="g g2" style="margin-top:8px">${[{id:'ALL',name:'Flex 5v5',desc:'The best pick for every role at once.'},...RL].map(r=>`<button class="card ${S.role===r.id?'sel':''}" data-a="role" data-v="${esc(r.id)}"><div class="rl"><span class="rib ${esc(r.id)}c">${rIcon(r.id)}</span><div style="min-width:0"><div class="nm">${esc(r.name)}${S.prof.ranks[r.id]?` <span class="tag a">${esc(divLabel(S.prof.ranks[r.id]))}</span>`:''}</div><div class="mut">${esc(r.desc)}</div></div></div></button>`).join('')}</div></div>`;
+if(S.step===3){const modes=[...new Set(M.flatMap(m=>m.modes))].sort();return`<div class="pn"><div class="mut">STEP 3 OF 4</div><h2 class="nm">Select competitive map</h2><div class="pills" style="margin:8px 0">${['ALL',...modes].map(x=>`<button class="b ${S.mode===x?'on2':''}" data-a="mode" data-v="${esc(x)}">${esc(cap(x))}</button>`).join('')}</div><input id="mq" placeholder="Quick filter map…" value="${esc(S.q)}" style="width:100%;margin-bottom:8px"><div id="maplist" class="g g3">${mapList()}</div></div>`}
+const m=mapO(),picks=recommend(),bs=bansCalc(picks);
+return`<div class="pn" style="position:relative;overflow:hidden">${mapImg(m)}<div class="row"><div><span class="tag a">${esc(m?m.modes.map(cap).join(' / '):'')}</span> <span class="nm">${esc(m?m.name:'')}</span><div class="mut">${m&&topOnMap(m.key)?'Best here (all ranks): '+esc(topOnMap(m.key)):'No map stats yet'}</div><div class="mut">Tap any card for details</div></div></div></div>
+<div class="g g2"><div class="pn"><h3 class="nm">Top ${S.role==='ALL'?'picks by role':'3 picks'}</h3><div class="g" style="margin-top:8px">${picks.map(pickRow).join('')||'<div class="mut">No hero stats for this rank yet.</div>'}</div></div><div class="pn"><h3 class="nm">Top 3 priority bans</h3><div class="g" style="margin-top:8px">${bs.map(banRow).join('')||'<div class="mut">No ban data for this rank yet.</div>'}</div></div></div>
 <div class="row"><div class="rl"><button class="b" data-a="modal" data-v="sim">Counter sim (${banned().length}B / ${enemies().length}E)</button><button class="b ${S.prof.comfort?'on2':''}" data-a="comfort">★ My mains: ${S.prof.comfort?'ON':'OFF'}</button></div><button class="b" data-a="reset">Reset</button></div>`}
-function sheet(inner,wide){return`<div class="mo" data-a="close"><div class="sh" onclick="event.stopPropagation()">${inner}</div></div>`}
+function sheet(inner){return`<div class="mo" data-a="close"><div class="sh">${inner}</div></div>`}
 const xbtn='<button class="b" data-a="close">✕</button>';
+function perkBlock(h){const p=D&&D.perks&&D.perks[h.key];if(!p)return'';
+const col=(t,a)=>a&&a.length?`<div class="mut" style="margin-top:6px"><b>${t}</b></div>${a.map((x,i)=>`<div style="margin-top:3px"><b>${esc(x.n)}</b> <span class="tag ${x.p>=Math.max(...a.map(y=>y.p))?'a':''}">${x.p}% of votes</span><div class="mut">${esc(x.d)}</div></div>`).join('')}`:'';
+return`<div class="card" style="margin-top:8px"><div class="mut">PERKS · community votes (owperks.com), not match results</div>${col('Minor',p.minor)}${col('Major',p.major)}${col('Perks',p.other)}</div>`}
+function patchBlock(h){const p=D&&D.patch&&D.patch.heroes&&D.patch.heroes[h.key];if(!p)return'';
+return`<div class="card" style="margin-top:8px"><div class="mut">LATEST PATCH NOTES${D.patch.date?' · '+esc(D.patch.date):''}</div>${p.dev?`<div style="margin-top:4px">${esc(p.dev)}</div>`:''}<ul style="margin:6px 0 0;padding-left:18px">${p.lines.map(l=>`<li class="mut">${esc(l)}</li>`).join('')}</ul></div>`}
+const chips=a=>a.length?a.map(x=>esc(x.h.name)+' '+sg(x.r)).join(' · '):'<span class="mut">no data</span>';
 function modal(){
 const P=S.prof,m=mapO();
-if(S.modal==='patch')return sheet(`<div class="row"><h2 class="nm">Season 5 “A Grim Doctrine” briefing</h2>${xbtn}</div><p><b>Roster &amp; systems.</b> Hero Ban and Map Voting are active in competitive. Drafting well before the doors open matters as much as aim.</p><p><b>Doctrine</b> (new support) has a ${S.heroes.find(h=>h.id==='doctrine').wr}% win rate and ${S.heroes.find(h=>h.id==='doctrine').pr}% pick rate. Lock him early.</p><p><b>Support Sombra</b> lost her ability lock and gained a burst heal plus a damage/healing-reduction debuff, and is one of the most-banned heroes.</p><p><b>D.Mon &amp; Domina</b> are the tank titans: D.Mon for brawl-dive, Domina as the poke anchor with a low ban rate.</p><p><b>Vendetta &amp; Sierra</b> are the damage standouts.</p><div class="mut">Numbers are the built-in snapshot unless you run Sync or edit them in Override.</div>`);
-if(S.modal==='override')return sheet(`<div class="row"><h2 class="nm">Patch override</h2>${xbtn}</div><div class="mut" style="margin-top:6px">Source: Blizzard’s official hero stats (competitive, PC) via OverFast · region <select data-region>${["americas","europe","asia"].map(x=>`<option ${CFG.region===x?"selected":""}>${x}</option>`).join("")}</select></div><div class="row" style="margin:8px 0"><span class="mut">${S.heroes.length} heroes · saved in this browser</span><button class="b r" data-a="resetmeta">Reset snapshot</button></div><div class="g">${S.heroes.map(h=>`<div class="card"><div class="row"><b>${esc(h.name)}</b><span class="tag">${h.role}</span>${S.rosterOK&&!h.live?'<span class="tag d">not in OverFast roster</span>':''}</div><div class="rl" style="margin-top:6px;flex-wrap:wrap">${[['wr','Win'],['br','Ban'],['pr','Pick']].map(f=>`<label class="mut">${f[1]}% <input type="number" step="0.1" min="0" max="75" value="${h[f[0]]}" data-stat="${h.id}:${f[0]}" style="width:70px"></label>`).join('')}</div></div>`).join('')}</div>`);
-if(S.modal==='profile'){const[tn,dm]=['TANK','DAMAGE'];return sheet(`<div class="row"><div><h2 class="nm">${esc(P.tag)}</h2>${psLine()}</div>${xbtn}</div>
+if(S.modal==='data'){const src=D&&D.sources||{},NM={roster:'Hero and map roster',rates:'Official win, pick and ban rates (Blizzard via OverFast)',counterwatch:'Matchups, duos, tier and season (Counterwatch)',patchnotes:'Patch notes (Blizzard)',perks:'Perks (owperks.com community votes)'};
+const newH=H.filter(h=>h.fresh).length,newM=M.filter(x=>x.fresh).length;
+return sheet(`<div class="row"><h2 class="nm">Where the data comes from</h2>${xbtn}</div>
+<div class="mut" style="margin:6px 0">Nothing on this page is typed in by hand. A GitHub workflow collects it once a day into data/meta.json${D?' (last run '+esc(new Date(D.updated).toLocaleString())+')':''}.</div>
+<div class="g">${Object.keys(NM).map(k=>{const s=src[k];return`<div class="card"><div class="row"><b>${esc(NM[k])}</b><span class="tag ${s&&s.ok?'a':'d'}">${s?(s.ok?'OK':s.stale?'FAILED · showing older data':'FAILED'):'not run'}</span></div><div class="mut">${s?esc((s.ok?'Updated '+new Date(s.at).toLocaleString()+' · '+(s.count!=null?s.count+' items':'')+(s.note?' · '+s.note:''):(s.error||'')+(s.staleAt?' · older data from '+new Date(s.staleAt).toLocaleDateString():''))):'No result yet. Run the workflow.'}</div></div>`}).join('')}</div>
+<div class="card" style="margin-top:8px"><b>Live roster check</b><div class="mut">${LIVE.ok?'OverFast reports '+LIVE.heroes.length+' heroes and '+LIVE.maps.length+' maps right now. New heroes and maps appear here automatically'+(newH||newM?': '+newH+' new hero(es) and '+newM+' new map(s) since the last data run, shown without stats until the next run.':'; none are new since the last data run.'):'Could not reach OverFast. Showing the roster from the data file.'}</div></div>
+<div class="card" style="margin-top:8px"><b>How the numbers are used</b><ul class="mut" style="margin:6px 0 0;padding-left:18px"><li>Win rate shown = official win rate at your rank, plus the hero’s map win rate minus its all-maps win rate for the selected map.</li><li>Matchup bonus = 0.25 × Counterwatch’s counter rating per enemy hero you enter, capped at ±8.</li><li>Heroes under 1% pick rate are left out of picks and bans.</li><li>Bans target the heroes that counter your top picks (and your starred mains, if on), weighted with their win rate.</li><li>Perk percentages are community votes, not match results.</li></ul></div>
+<div class="rl" style="margin-top:10px"><button class="b p" data-a="refresh">Refresh now</button></div>`)}
+if(S.modal==='profile'){const divs=(D&&D.divisions)||[];return sheet(`<div class="row"><div><h2 class="nm">${esc(P.tag)}</h2>${psLine()}</div>${xbtn}</div>
 <div class="rl" style="margin:8px 0"><input id="tag" value="${esc(P.tag)}" style="flex:1" aria-label="BattleTag"><button class="b p" data-a="savetag">Check / sync</button></div><div class="mut">Career Profile must be set to Public in Overwatch (Options → Social) for ranks and hero stats to sync. You can always set everything by hand below.</div>
-<div class="g g3">${['TANK','DAMAGE','SUPPORT'].map(r=>`<div class="card"><div class="mut">My ${r} rank</div><select data-rr="${r}" style="width:100%">${RANKS.map(k=>`<option value="${k[0]}" ${P.ranks[r]===k[0]?'selected':''}>${k[2]}</option>`).join('')}</select></div>`).join('')}</div>
+<div class="g g3" style="margin-top:8px">${RL.map(r=>`<div class="card"><div class="mut">My ${esc(r.name)} rank</div><select data-rr="${esc(r.id)}" style="width:100%"><option value="">Not set</option>${divs.filter(d=>d.key!=='all').map(d=>`<option value="${esc(d.key)}" ${P.ranks[r.id]===d.key?'selected':''}>${esc(d.label)}</option>`).join('')}</select></div>`).join('')}</div>
 <label class="rl" style="margin:8px 0"><input type="checkbox" data-ck="comfort" ${P.comfort?'checked':''}> Boost ★ starred mains in picks and protect them in bans</label>
 <label class="rl"><input type="checkbox" data-ck="auto" ${P.auto?'checked':''}> Auto-match rank when selecting a role</label>
 <h3 class="nm" style="margin:12px 0 6px">Hero pool · ${P.mains.length} starred</h3>
-<div class="pills">${['ALL','TANK','DAMAGE','SUPPORT'].map(x=>`<button class="b ${S.pf===x?'on2':''}" data-a="pf" data-v="${x}">${x}</button>`).join('')}</div>
+<div class="pills">${['ALL',...RL.map(r=>r.id)].map(x=>`<button class="b ${S.pf===x?'on2':''}" data-a="pf" data-v="${esc(x)}">${esc(x==='ALL'?'ALL':(RL.find(r=>r.id===x)||{}).name||x)}</button>`).join('')}</div>
 <input id="pq" placeholder="Search heroes…" value="${esc(S.pq)}" style="width:100%;margin:6px 0"><div id="plist" class="g g3">${poolList()}</div>`)}
-if(S.modal==='sim'){const sl=['Tank','DPS 1','DPS 2','Sup 1','Sup 2'],sr=['TANK','DAMAGE','DAMAGE','SUPPORT','SUPPORT'];const pk=S.picker;
-return sheet(`<div class="row"><h2 class="nm">Counter-pick simulator</h2>${xbtn}</div><div class="pills" style="margin:8px 0">${PRESETS.map((p,i)=>`<button class="b" data-a="preset" data-v="${i}">${p[0]}</button>`).join('')}<button class="b r" data-a="clear">Clear all</button></div>
+if(S.modal==='sim'){const pk=S.picker;return sheet(`<div class="row"><h2 class="nm">Counter-pick simulator</h2>${xbtn}</div><div class="pills" style="margin:8px 0"><button class="b r" data-a="clear">Clear all</button></div>
 <div class="mut">4 lobby ban slots</div><div class="g" style="grid-template-columns:repeat(4,1fr)">${S.bans.map((b,i)=>`<div class="slot ${b?'f':''}" data-a="slot" data-v="ban:${i}:ALL">${esc(b||'Ban '+(i+1))}</div>`).join('')}</div>
-<div class="mut" style="margin-top:8px">5 enemy slots</div><div class="g" style="grid-template-columns:repeat(5,1fr)">${S.enemy.map((b,i)=>`<div class="slot ${b?'f':''}" data-a="slot" data-v="enemy:${i}:${sr[i]}">${esc(b||sl[i])}</div>`).join('')}</div>
-${pk?`<div class="card" style="margin-top:8px"><div class="row"><b>Choose ${pk.t==='ban'?'ban #'+(pk.i+1):'enemy '+pk.r}</b><button class="b" data-a="slot" data-v="">✕</button></div><div class="rl" style="flex-wrap:wrap;margin-top:6px">${S.heroes.filter(h=>pk.r==='ALL'||h.role===pk.r).map(h=>`<button class="b" data-a="assign" data-v="${esc(h.name)}">${esc(h.name)}</button>`).join('')}</div></div>`:''}
-<div style="text-align:right;margin-top:10px"><button class="b p" data-a="close">Apply to top 3</button></div>`)}
+<div class="mut" style="margin-top:8px">5 enemy slots</div><div class="g" style="grid-template-columns:repeat(5,1fr)">${S.enemy.map((b,i)=>{const sr=['TANK','DAMAGE','DAMAGE','SUPPORT','SUPPORT'][i],sl=['Tank','DPS 1','DPS 2','Sup 1','Sup 2'][i];return`<div class="slot ${b?'f':''}" data-a="slot" data-v="enemy:${i}:${sr}">${esc(b||sl)}</div>`}).join('')}</div>
+${pk?`<div class="card" style="margin-top:8px"><div class="row"><b>Choose ${pk.t==='ban'?'ban #'+(pk.i+1):'enemy '+cap(pk.r)}</b><button class="b" data-a="slot" data-v="">✕</button></div><div class="rl" style="flex-wrap:wrap;margin-top:6px">${H.filter(h=>pk.r==='ALL'||h.role===pk.r).map(h=>`<button class="b" data-a="assign" data-v="${esc(h.name)}">${esc(h.name)}</button>`).join('')}</div></div>`:''}
+<div style="text-align:right;margin-top:10px"><button class="b p" data-a="close">Apply to top picks</button></div>`)}
 if(S.modal==='insp'&&S.insp){const it=S.insp;
-if(it.type==='pick'){const h=it.d;return sheet(`<div class="row"><div class="rl">${av(h,56)}<div><span class="tag a">Pick #${it.i+1} · ${h.tier}</span> <span class="tag">${h.role}</span><h2 class="nm">${esc(h.name)}</h2><div class="mut">${esc(h.sub)}</div></div></div>${xbtn}</div>
-<div class="g" style="grid-template-columns:repeat(3,1fr);margin:10px 0;text-align:center"><div class="card"><div class="mut">Map WR</div><div class="wr" style="text-align:center">${h.cwr}%</div></div><div class="card"><div class="mut">Pick</div><b>${h.pr}%</b></div><div class="card"><div class="mut">Ban</div><b style="color:var(--rd)">${h.br}%</b></div></div>
-<div class="card"><div class="mut">WHY PICK ON ${esc(m.name.toUpperCase())} (${esc(rk(S.rank)[2].toUpperCase())})</div>${esc(why(h,RI[S.rank]))}<div class="mut" style="margin-top:6px">Score ${h.total.toFixed(0)} · ${m.b>=m.d&&m.b>=m.p?'brawl':m.d>=m.p?'dive':'poke'}-leaning map · rank weight ${h.rw[RI[S.rank]]}/10${h.ce.length?' · counters '+esc(h.ce.join(', ')):''}${h.te.length?' · threatened by '+esc(h.te.join(', ')):''}</div></div>
-<div class="card" style="margin-top:8px"><div class="mut">PERK LOADOUT</div><b>${esc(h.perk)}</b></div>
-<div class="g g2" style="margin-top:8px"><div class="card"><div class="mut" style="color:var(--gd)">BEST ALLIES</div>${esc(h.syn.join(' · '))}</div><div class="card"><div class="mut" style="color:var(--rd)">WATCH OUT FOR</div>${esc(h.ctr.join(' · '))}</div></div>
+if(it.type==='pick'){const x=it.d,h=x.h,cw=cwOf(h);
+return sheet(`<div class="row"><div class="rl">${av(h,56)}<div><span class="tag a">Pick #${it.i+1}</span> <span class="tag">${esc(cap(h.role))}</span><h2 class="nm">${esc(h.name)}</h2></div></div>${xbtn}</div>
+<div class="g" style="grid-template-columns:repeat(3,1fr);margin:10px 0;text-align:center"><div class="card"><div class="mut">Win rate</div><div class="wr" style="text-align:center">${f1(x.wr)}%</div></div><div class="card"><div class="mut">Pick</div><b>${f1(x.r[1])}%</b></div><div class="card"><div class="mut">Ban</div><b style="color:var(--rd)">${x.r[2]!=null?f1(x.r[2])+'%':'—'}</b></div></div>
+<div class="card"><div class="mut">WHY THIS PICK ON ${esc(m?m.name.toUpperCase():'')} (${esc(divLabel(S.rank).toUpperCase())})</div><ul style="margin:6px 0 0;padding-left:18px">${pickLines(x).map(l=>`<li>${esc(l)}</li>`).join('')}</ul></div>
+<div class="g g2" style="margin-top:8px"><div class="card"><div class="mut" style="color:var(--gd)">BEATS (Counterwatch)</div>${chips(beatsOf(h,4))}</div><div class="card"><div class="mut" style="color:var(--rd)">COUNTERED BY (Counterwatch)</div>${chips(countersOf(h,4))}</div></div>
+${cw.duos&&cw.duos.length?`<div class="card" style="margin-top:8px"><div class="mut">BEST DUOS · combined win rate (Counterwatch)</div>${cw.duos.map(d=>{const o=hk(d[0]);return o?esc(o.name)+' '+f1(d[1])+'%':''}).filter(Boolean).join(' · ')}</div>`:''}
+${perkBlock(h)}${patchBlock(h)}
 <div class="rl" style="margin-top:10px"><button class="b r" style="flex:1" data-a="banclose" data-v="${esc(h.name)}">Mark banned in lobby</button><button class="b p" data-a="close">Done</button></div>`)}
-const b=it.d;return sheet(`<div class="row"><div class="rl">${av(b.hero,56)}<div><span class="tag d">Priority ban #${it.i+1} · ${esc(b.threat)}</span><h2 class="nm">Ban ${esc(b.name)}</h2><div class="mut">${b.br}% ban rate · ${b.wr}% win rate</div></div></div>${xbtn}</div>
-<div class="card" style="margin-top:10px"><div class="mut" style="color:var(--rd)">WHY BAN ON ${esc(m.name.toUpperCase())}</div>${esc(b.reason)}</div>
-<div class="card" style="margin-top:8px"><div class="mut">IF LEFT UNBANNED, COUNTER WITH</div><b>${esc(b.hero.str.join(' · '))}</b></div>
-<div class="rl" style="margin-top:10px"><button class="b r" style="flex:1" data-a="banclose" data-v="${esc(b.name)}">Confirm ban in lobby</button><button class="b" data-a="enemyclose" data-v="${esc(b.name)}">Enemy picked</button></div>`)}
+const b=it.d,h=b.h;
+return sheet(`<div class="row"><div class="rl">${av(h,56)}<div><span class="tag d">Priority ban #${it.i+1}</span><h2 class="nm">Ban ${esc(h.name)}</h2><div class="mut">${b.r[2]!=null?f1(b.r[2])+'% ban rate · ':''}${f1(b.wr)}% win rate</div></div></div>${xbtn}</div>
+<div class="card" style="margin-top:10px"><div class="mut" style="color:var(--rd)">WHY BAN ${esc(h.name.toUpperCase())}</div>${esc(banReason(b))}</div>
+<div class="card" style="margin-top:8px"><div class="mut">IF LEFT UNBANNED, COUNTER WITH (Counterwatch)</div><b>${chips(countersOf(h,5))}</b></div>
+${patchBlock(h)}
+<div class="rl" style="margin-top:10px"><button class="b r" style="flex:1" data-a="banclose" data-v="${esc(h.name)}">Confirm ban in lobby</button><button class="b" data-a="enemyclose" data-v="${esc(h.name)}">Enemy picked</button></div>`)}
 return''}
+function logoFail(i){if(!i.dataset.t){i.dataset.t='1';i.src='logo.svg'}else i.parentNode.style.display='none'}
 let toastT;function toast(t){const e=document.createElement('div');e.className='toast';e.textContent=t;document.body.appendChild(e);clearTimeout(toastT);toastT=setTimeout(()=>e.remove(),4200)}
-function R(){const y=window.scrollY;document.getElementById('app').innerHTML=header()+nav()+step()+modal();window.scrollTo(0,y)}
-// ---------- ACTIONS ----------
-function toggleBan(n){const i=S.bans.indexOf(n);if(i>-1)S.bans[i]=null;else{let e=S.bans.indexOf(null);S.bans[e<0?3:e]=n}S.enemy=S.enemy.map(x=>x===n?null:x)}
-function setEnemy(n){const h=S.heroes.find(x=>x.name===n);if(!h)return;if(S.enemy.includes(n)){S.enemy=S.enemy.map(x=>x===n?null:x);return}
-if(h.role==='TANK')S.enemy[0]=n;else if(h.role==='DAMAGE'){if(!S.enemy[1])S.enemy[1]=n;else S.enemy[2]=n}else{if(!S.enemy[3])S.enemy[3]=n;else S.enemy[4]=n}}
+function render(){const y=window.scrollY;document.title='Overwatch '+(D&&D.season?'S'+D.season.number+' ':'')+'Draft Assistant';document.getElementById('app').innerHTML=header()+(D?nav():'')+step()+modal();window.scrollTo(0,y)}
+// ---------- actions ----------
+function toggleBan(n){const i=S.bans.indexOf(n);if(i>-1)S.bans[i]=null;else{const e=S.bans.indexOf(null);S.bans[e<0?3:e]=n}S.enemy=S.enemy.map(x=>x===n?null:x)}
+function setEnemy(n){const h=hn(n);if(!h)return;if(S.enemy.includes(n)){S.enemy=S.enemy.map(x=>x===n?null:x);return}
+const slots=h.role==='TANK'?[0]:h.role==='DAMAGE'?[1,2]:[3,4];const free=slots.find(i=>!S.enemy[i]);S.enemy[free!==undefined?free:slots[slots.length-1]]=n}
 const A={
 step:v=>S.step=+v,rank:v=>{S.rank=v;S.step=2},
-role:v=>{S.role=v;if(S.prof.auto&&v!=='ALL'&&S.prof.ranks[v])S.rank=S.prof.ranks[v];S.step=3},
+role:v=>{S.role=v;const pr=S.prof.ranks[v];if(S.prof.auto&&v!=='ALL'&&pr&&((D&&D.divisions)||[]).some(d=>d.key===pr))S.rank=pr;S.step=3},
 map:v=>{S.map=v;S.step=4},mode:v=>S.mode=v,modal:v=>S.modal=v,close:()=>{S.modal=null;S.picker=null},
 ban:v=>toggleBan(v),banclose:v=>{toggleBan(v);S.modal=null},enemyclose:v=>{setEnemy(v);S.modal=null},
 comfort:()=>{S.prof.comfort=!S.prof.comfort;save()},
 reset:()=>{S.bans=[null,null,null,null];S.enemy=[null,null,null,null,null];S.step=1},
 main:v=>{const m=S.prof.mains,i=m.indexOf(v);if(i>-1)m.splice(i,1);else m.push(v);save()},
-pf:v=>S.pf=v,
-preset:v=>S.enemy=[...PRESETS[+v][1]],clear:()=>{S.bans=[null,null,null,null];S.enemy=[null,null,null,null,null]},
+pf:v=>S.pf=v,clear:()=>{S.bans=[null,null,null,null];S.enemy=[null,null,null,null,null]},
 slot:v=>{if(!v){S.picker=null;return}const p=v.split(':');S.picker={t:p[0],i:+p[1],r:p[2]}},
 assign:v=>{const k=S.picker;if(!k)return;const arr=k.t==='ban'?S.bans:S.enemy;const o=arr.indexOf(v);if(o>-1)arr[o]=null;arr[k.i]=v;if(k.t==='ban')S.enemy=S.enemy.map(x=>x===v?null:x);S.picker=null},
-insp:v=>{const[t,i]=v.split(':');const d=t==='pick'?recommend()[+i]:bansCalc()[+i];if(d){S.insp={type:t,i:+i,d};S.modal='insp'}},
+insp:v=>{const[t,i]=v.split(':');const picks=recommend();const d=t==='pick'?picks[+i]:bansCalc(picks)[+i];if(d){S.insp={type:t,i:+i,d};S.modal='insp'}},
 savetag:()=>{const v=document.getElementById('tag').value.trim();if(v){S.prof.tag=v;save();syncProfile()}},
-resetmeta:()=>{HEROES0.forEach(o=>{const h=S.heroes.find(x=>x.id===o.id);h.wr=o.wr;h.pr=o.pr;h.br=o.br});S.synced='S5.1 snapshot';save()},
-sync:()=>doSync()};
-function psLine(){const p=S.ps,c=p.st==='public'?'ok':p.st==='idle'||p.st==='checking'?'mut':'bad';return`<div class="mut ${c}" style="font-weight:600">${esc(p.msg)}</div>`}
-function divToRank(d){d=String(d||'').toLowerCase();if(!d)return null;if(/grandmaster|champion|top/.test(d))return'top';if(/diamond|master/.test(d))return'high';if(/platinum|emerald/.test(d))return'mid';if(/bronze|silver|gold/.test(d))return'metal';return null}
-const heroByKey=k=>S.heroes.find(h=>nk(h.name)===nk(k)||nk(h.id)===nk(k));
-async function hydrate(){
-try{const[h,m,ro]=await Promise.allSettled([fetch(OF+'/heroes').then(r=>r.json()),fetch(OF+'/maps').then(r=>r.json()),fetch(OF+'/roles').then(r=>r.json())]);
-if(h.status==='fulfilled'&&Array.isArray(h.value)){h.value.forEach(i=>{if(i.portrait){PORT[nk(i.key)]=i.portrait;PORT[nk(i.name)]=i.portrait}
-if(i.key&&i.name&&i.role&&!heroByKey(i.key)&&!heroByKey(i.name)){const r=String(i.role).toUpperCase();S.heroes.push({id:nk(i.key),name:i.name,role:['TANK','DAMAGE','SUPPORT'].includes(r)?r:'DAMAGE',sub:'Live roster hero',wr:50.5,pr:5,br:2.5,aff:[6,6,6],rw:[8,8,8,8],perk:'Season 5 loadout',syn:['Doctrine','D.Mon','Vendetta'],ctr:['Sombra','Tracer'],str:['Reinhardt','Orisa']})}})}
-if(h.status==='fulfilled'&&Array.isArray(h.value)){const ks=new Set();h.value.forEach(i=>{ks.add(nk(i.key));ks.add(nk(i.name))});S.heroes.forEach(x=>{x.live=ks.has(nk(x.id))||ks.has(nk(x.name))});S.rosterOK=true}
-if(ro.status==='fulfilled'&&Array.isArray(ro.value))ro.value.forEach(i=>{if(i.key&&i.icon)ROLEIMG[String(i.key).toLowerCase()]=i.icon});
-if(m.status==='fulfilled'&&Array.isArray(m.value))m.value.forEach(i=>{if(i.screenshot){MAPIMG[nk(i.name)]=i.screenshot;if(i.key)MAPIMG[nk(i.key)]=i.screenshot}});
-R()}catch(e){}}
-async function syncProfile(silent){
+refresh:()=>{loadAll(true)}};
+async function loadAll(bust){
+if(S.busy)return;S.busy=true;render();
+await Promise.all([loadMeta(bust),loadLive()]);
+rebuild();defaults();S.busy=false;S.loaded=true;render();
+if(bust)toast(D?'Data reloaded ('+ago(Date.parse(D.updated))+').':'No data file found. Run the Update data workflow first.')}
+// ---------- profile (live from OverFast) ----------
+const OFP=OF+'/players/';
+function toDiv(d){d=String(d||'');if(!d)return null;const x=((D&&D.divisions)||[]).find(v=>v.key!=='all'&&(nk(v.key)===nk(d)||nk(v.label)===nk(d)));return x?x.key:null}
+async function syncProfile(){
 const tag=S.prof.tag.trim(),slug=tag.replace('#','-'),P=S.prof;
-if(!/.+#\d+/.test(tag)){S.ps={st:'error',msg:'Enter your BattleTag as Name#12345.'};R();return}
-S.ps={st:'checking',msg:'Checking OverFast for '+tag+'…'};R();
+if(!/.+#\d+/.test(tag)){S.ps={st:'error',msg:'Enter your BattleTag as Name#12345.'};render();return}
+S.ps={st:'checking',msg:'Checking OverFast for '+tag+'…'};render();
 const now=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 try{
-const r=await fetch(OF+'/players/'+encodeURIComponent(slug)+'/summary');
-if(r.status===404){S.ps={st:'unindexed',msg:'Not found (404). Your profile is Friends Only/Private in-game, or OverFast hasn’t indexed it yet. Set it to Public and check again.'};R();return}
-if(!r.ok){S.ps={st:'error',msg:'OverFast returned HTTP '+r.status+'. Try again shortly.'};R();return}
-const d=await r.json();
-P.avatar=d.avatar||P.avatar;P.title=d.title||P.title;
-if(d.privacy==='private'||!d.competitive){S.ps={st:'private',msg:'Profile found but private. Ranks and hero stats stay hidden until Career Profile is Public.'};save();R();return}
+const r=await fetch(OFP+encodeURIComponent(slug)+'/summary');
+if(r.status===404){S.ps={st:'unindexed',msg:'Not found (404). Your profile is Friends Only/Private in-game, or OverFast hasn’t indexed it yet. Set it to Public and check again.'};render();return}
+if(!r.ok){S.ps={st:'error',msg:'OverFast returned HTTP '+r.status+'. Try again shortly.'};render();return}
+const d=await r.json();P.avatar=d.avatar||P.avatar;
+if(d.privacy==='private'||!d.competitive){S.ps={st:'private',msg:'Profile found but private. Ranks and hero stats stay hidden until Career Profile is Public.'};save();render();return}
 const c=(d.competitive&&(d.competitive.pc||d.competitive.console))||{};
-const rr={TANK:divToRank(c.tank&&c.tank.division),DAMAGE:divToRank(c.damage&&c.damage.division),SUPPORT:divToRank(c.support&&c.support.division)};
-Object.keys(rr).forEach(k=>{if(rr[k])P.ranks[k]=rr[k]});
+RL.forEach(ro=>{const k=toDiv(c[ro.id.toLowerCase()]&&c[ro.id.toLowerCase()].division);if(k)P.ranks[ro.id]=k});
 let n=0;
-try{const sr=await fetch(OF+'/players/'+encodeURIComponent(slug)+'/stats/summary?gamemode=competitive');
+try{const sr=await fetch(OFP+encodeURIComponent(slug)+'/stats/summary?gamemode=competitive');
 if(sr.ok){const sd=await sr.json(),ent=[];P.pwr={};
-Object.entries(sd.heroes||{}).forEach(([k,v])=>{const h=heroByKey(k);if(!h||!v)return;
-if(typeof v.winrate==='number')P.pwr[h.id]=+v.winrate.toFixed(1);
-if(typeof v.time_played==='number'&&v.time_played>0)ent.push([h.id,v.time_played])});
+Object.entries(sd.heroes||{}).forEach(([k,v])=>{const h=heroByKey(k);if(!h||!v)return;if(typeof v.winrate==='number')P.pwr[h.key]=+v.winrate.toFixed(1);if(typeof v.time_played==='number'&&v.time_played>0)ent.push([h.key,v.time_played])});
 ent.sort((a,b)=>b[1]-a[1]);P.mains=ent.slice(0,6).map(e=>e[0]);n=P.mains.length;if(n)P.comfort=true}}catch(e){}
-S.ps={st:'public',msg:'Public profile synced ('+now+'): '+n+' top heroes, role ranks updated.'};save();R()
-}catch(e){S.ps={st:'error',msg:'Network error reaching OverFast. Check your connection and try again.'};R()}}
-async function loadStats(){
-try{const r=await fetch(OF+'/heroes/stats?platform=pc&gamemode=competitive&region='+encodeURIComponent(CFG.region)+'&order_by=hero:asc');
-if(!r.ok)return{ok:false,msg:'OverFast hero stats returned HTTP '+r.status+'.'};
-const j=await r.json(),arr=Array.isArray(j)?j:(j.data||j.heroes||[]);let n=0;
-arr.forEach(u=>{const h=heroByKey(u.hero||u.key||u.name);if(!h)return;let c=false;
-if(typeof u.winrate==='number'&&u.winrate>0&&u.winrate<100){h.wr=+u.winrate.toFixed(1);c=true}
-if(typeof u.pickrate==='number'&&u.pickrate>=0&&u.pickrate<=100){h.pr=+u.pickrate.toFixed(1);c=true}
-if(typeof u.banrate==='number'&&u.banrate>=0&&u.banrate<=100)h.br=+u.banrate.toFixed(1);
-if(c)n++});
-if(n){S.synced='Live · Blizzard stats ('+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+')';save()}
-return{ok:true,n}}catch(e){return{ok:false,msg:'Network error reaching OverFast.'}}}
-async function doSync(){
-if(S.busy)return;S.busy=true;R();
-await hydrate();const r=await loadStats();
-toast(r.ok?(r.n?'Updated '+r.n+' heroes from Blizzard’s hero stats.':'OverFast returned no hero stats right now.'):r.msg);
-S.busy=false;R()}
+S.ps={st:'public',msg:'Public profile synced ('+now+'): '+n+' top heroes, role ranks updated.'};save();render()
+}catch(e){S.ps={st:'error',msg:'Network error reaching OverFast. Check your connection and try again.'};render()}}
+// ---------- events ----------
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&S.modal){S.modal=null;S.picker=null;render()}});
 document.addEventListener('click',e=>{const t=e.target.closest('[data-a]');if(!t)return;if(t.classList.contains('mo')&&e.target!==t)return;
-const a=t.dataset.a;if(!A[a])return;e.stopPropagation();const sc=document.querySelector('.sh')?.scrollTop;A[a](t.dataset.v);R();const sh=document.querySelector('.sh');if(sh&&sc&&S.modal)sh.scrollTop=sc});
+const a=t.dataset.a;if(!A[a])return;e.stopPropagation();const sc=document.querySelector('.sh')?.scrollTop;A[a](t.dataset.v);if(a!=='refresh'){render();const sh=document.querySelector('.sh');if(sh&&sc&&S.modal)sh.scrollTop=sc}});
 document.addEventListener('input',e=>{const t=e.target;
 if(t.id==='mq'){S.q=t.value;document.getElementById('maplist').innerHTML=mapList()}
 else if(t.id==='pq'){S.pq=t.value;document.getElementById('plist').innerHTML=poolList()}
-else if(t.dataset.wr){const v=parseFloat(t.value);if(!isNaN(v)){S.prof.pwr[t.dataset.wr]=Math.min(95,Math.max(25,v));save()}}
-else if(t.dataset.stat){const[id,f]=t.dataset.stat.split(':'),v=parseFloat(t.value),h=S.heroes.find(x=>x.id===id);if(h&&!isNaN(v)){h[f]=v;S.synced='Custom patch';save()}}});
+else if(t.dataset.wr){const v=parseFloat(t.value);if(t.value===''){delete S.prof.pwr[t.dataset.wr];save()}else if(!isNaN(v)){S.prof.pwr[t.dataset.wr]=Math.min(95,Math.max(25,v));save()}}});
 document.addEventListener('change',e=>{const t=e.target;
-if(t.dataset.region){CFG.region=t.value;saveCfg();doSync()}
-else if(t.dataset.rr){S.prof.ranks[t.dataset.rr]=t.value;if(S.role===t.dataset.rr)S.rank=t.value;save();R()}
-else if(t.dataset.ck){S.prof[t.dataset.ck]=t.checked;save();R()}});
-R();hydrate().then(loadStats).then(R);if(S.prof.tag)syncProfile(true);
+if(t.dataset.rr){if(t.value)S.prof.ranks[t.dataset.rr]=t.value;else delete S.prof.ranks[t.dataset.rr];if(S.role===t.dataset.rr&&t.value)S.rank=t.value;save();render()}
+else if(t.dataset.ck){S.prof[t.dataset.ck]=t.checked;save();render()}});
+// ---------- start ----------
+render();
+loadAll(false).then(()=>{if(S.prof.tag)syncProfile()});
+
 </script></body></html>
