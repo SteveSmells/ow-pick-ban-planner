@@ -81,7 +81,7 @@ const sg=n=>(n>=0?'+':'−')+f1(Math.abs(n));
 let D=null;                                  // data/meta.json written by the daily workflow
 const LIVE={heroes:[],maps:[],roles:[],ok:false};   // live OverFast roster (new heroes/maps show up here first)
 let H=[],M=[],RL=[],CTR_BY={};               // merged heroes, maps, roles, "who does this hero beat" index
-const S={step:1,rank:'all',role:'TANK',map:null,mode:'ALL',q:'',bans:[null,null,null,null],enemy:[null,null,null,null,null],modal:null,insp:null,picker:null,pf:'ALL',pq:'',busy:false,loaded:false,
+const S={chosen:null,step:1,rank:'all',role:'TANK',map:null,mode:'ALL',q:'',bans:[null,null,null,null],enemy:[null,null,null,null,null],modal:null,insp:null,picker:null,pf:'ALL',pq:'',busy:false,loaded:false,
 prof:{tag:'LightArrow#21557',comfort:false,auto:false,ranks:{},mains:[],pwr:{}},ps:{st:'idle',msg:'Not checked yet.'}};
 try{const v=JSON.parse(localStorage.getItem(KEY)||'null');if(v&&v.prof)Object.assign(S.prof,v.prof)}catch(e){}
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify({prof:S.prof}))}catch(e){}};
@@ -119,6 +119,7 @@ if(RL.length&&S.role!=='ALL'&&!RL.some(r=>r.id===S.role))S.role=RL[0].id}
 const hk=k=>H.find(h=>h.key===k);
 const hn=n=>H.find(h=>h.name===n);
 const heroByKey=k=>H.find(h=>h.key===k||nk(h.name)===nk(k)||nk(h.key)===nk(k));
+const chosenHero=()=>{const h=S.chosen&&hk(S.chosen);return h&&(S.role==='ALL'||h.role===S.role)&&!banned().includes(h.name)?h:null};
 const mapO=()=>M.find(m=>m.key===S.map)||null;
 const divLabel=k=>{const d=((D&&D.divisions)||[]).find(x=>x.key===k);return d?d.label:cap(k)};
 const banned=()=>S.bans.filter(Boolean);
@@ -126,7 +127,10 @@ const enemies=()=>S.enemy.filter(Boolean).map(hn).filter(Boolean);
 const cwOf=h=>(D&&D.cw&&D.cw[h.key])||{};
 const rt=(h,d)=>{const r=D&&D.rates&&D.rates[d||S.rank];return r&&r[h.key]||null};
 const mapRt=(h,mk)=>{const m=D&&D.mapRates&&D.mapRates[mk||S.map];return m&&m[h.key]||null};
-const mapDelta=h=>{const m=mapRt(h),a=rt(h,'all');return m&&a?m[0]-a[0]:0};
+const confR=pr=>pr/(pr+3);   // rarely played heroes count less: a few games swing their win rate
+const confM=pr=>pr/(pr+8);   // a single map has far fewer games, so it needs more evidence
+const mapDelta=h=>{const m=mapRt(h),a=rt(h,'all');return m&&a?(m[0]-a[0])*confM(m[1]):0};   // weighted map bonus, in points
+const shrunk=h=>{const r=rt(h);return r?50+(r[0]-50)*confR(r[1]):null};   // rank win rate weighted by pick rate
 const LBL={duel:'wins the 1v1',team:'team pressure',mixed:'mixed threat'};
 // how much hero h counters enemy e: [rating,label] (positive = h counters e)
 function ctr(h,e){const c=D&&D.counters;if(!c)return null;
@@ -146,8 +150,8 @@ en.forEach(e=>{const c=ctr(h,e);if(!c)return;cb+=c[0]*0.25;if(c[0]>=2)ce.push({e
 cb=Math.max(-8,Math.min(8,cb));
 const main=P.mains.includes(h.key),pw=P.pwr[h.key];
 const cf=P.comfort&&main?1.5+(typeof pw==='number'&&pw>50?(pw-50)*.1:0):0;
-const wr=r[0]+md;
-sc.push({h,r,wr,md,cb,ce,te,main,pw,cf,total:wr+cb+cf})});
+const wr=r[0];   // displayed: the official win rate at this rank
+sc.push({h,r,wr,md,cb,ce,te,main,pw,cf,total:shrunk(h)+md+cb+cf})});
 sc.sort((a,b)=>b.total-a.total);
 if(S.role==='ALL')return RL.map(ro=>sc.find(x=>x.h.role===ro.id)).filter(Boolean);
 return sc.slice(0,3)}
@@ -156,14 +160,14 @@ if(!D||!D.rates)return[];
 const bn=banned(),P=S.prof;
 const mainsRole=H.filter(h=>P.comfort&&P.mains.includes(h.key)&&(S.role==='ALL'||h.role===S.role)).slice(0,3);
 const tg=[];[...mainsRole,...picks.map(p=>p.h)].forEach(h=>{if(!tg.includes(h))tg.push(h)});
-const T=tg.slice(0,4),W=[1,.7,.5,.35],protect=new Set(P.comfort?P.mains:[]);
+const ch=chosenHero(),T=ch?[ch]:tg.slice(0,4),W=[1,.7,.5,.35],protect=new Set(P.comfort?P.mains:[]);
 const out=[];
 H.forEach(h=>{if(bn.includes(h.name)||protect.has(h.key)||T.includes(h))return;
 const r=rt(h);if(!r||r[1]<1)return;
 let s=0,best=null;
 T.forEach((t,i)=>{const c=ctr(h,t);if(c&&c[0]>0){const v=c[0]*W[i];s+=v;if(!best||v>best.v)best={v,t:t.name,r:c[0],l:c[1]}}});
-const wr=r[0]+mapDelta(h);
-out.push({h,r,wr,best,total:s+(wr-50)*0.8})});
+const wr=r[0];
+out.push({h,r,wr,best,total:s+(shrunk(h)+mapDelta(h)-50)*0.8})});
 out.sort((a,b)=>b.total-a.total);
 return out.slice(0,3)}
 function banReason(b){const p=[];
@@ -173,7 +177,8 @@ if(b.r[2]!=null)p.push(f1(b.r[2])+'% ban rate');
 return p.join(' · ')}
 function pickLines(x){const h=x.h,m=mapO(),L=[];
 L.push('Official win rate at '+divLabel(S.rank)+': '+f1(x.r[0])+'% ('+f1(x.r[1])+'% pick'+(x.r[2]!=null?', '+f1(x.r[2])+'% ban':'')+').');
-const mr=mapRt(h);if(m&&mr)L.push('On '+m.name+': '+f1(mr[0])+'% across all ranks ('+sg(x.md)+' points vs. its all-maps rate).');
+L.push('Scored on a sample-weighted win rate: at a '+f1(x.r[1])+'% pick rate its official number counts '+Math.round(confR(x.r[1])*100)+'% toward the score.');
+const mr=mapRt(h);if(m&&mr)L.push('On '+m.name+': '+f1(mr[0])+'% across all ranks ('+f1(mr[1])+'% pick there). Counted as '+sg(x.md)+' points after weighting for sample size.');
 x.ce.forEach(c=>L.push('Counters '+c.e+' ('+sg(c.r)+(c.l?', '+LBL[c.l]:'')+').'));
 x.te.forEach(c=>L.push(c.e+' counters this hero ('+sg(c.r)+(c.l?', '+LBL[c.l]:'')+').'));
 const cw=cwOf(h);if(cw.tier||cw.lean)L.push('Counterwatch: '+(cw.tier?'tier '+cw.tier:'')+(cw.tier&&cw.lean?', ':'')+(cw.lean?'leans '+cw.lean:'')+'.');
@@ -185,16 +190,17 @@ const rIcon=(id,c)=>{const r=RL.find(x=>x.id===id);return r&&r.icon&&id!=='ALL'?
 const av=(h,sz)=>`<div class="av ${h.role}" ${sz?`style="width:${sz}px;height:${sz}px"`:''}><span>${esc(h.name.slice(0,3).toUpperCase())}</span>${h.portrait?`<img src="${esc(h.portrait)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:''}</div>`;
 const mapImg=m=>m&&m.img?`<img class="mbg" src="${esc(m.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:'';
 function ago(ms){if(isNaN(ms))return 'at an unknown time';const d=Math.floor((Date.now()-ms)/864e5);return d<=0?'today':d===1?'yesterday':d+' days ago'}
-function topAt(div){const r=D&&D.rates&&D.rates[div];if(!r)return'';return H.filter(h=>r[h.key]&&r[h.key][1]>=1).sort((a,b)=>r[b.key][0]-r[a.key][0]).slice(0,3).map(h=>h.name+' '+f1(r[h.key][0])+'%').join(' · ')}
-function topOnMap(mk){const r=D&&D.mapRates&&D.mapRates[mk];if(!r)return'';return H.filter(h=>r[h.key]&&r[h.key][1]>=1).sort((a,b)=>r[b.key][0]-r[a.key][0]).slice(0,3).map(h=>h.name+' '+f1(r[h.key][0])+'%').join(' · ')}
+function topAt(div){const r=D&&D.rates&&D.rates[div];if(!r)return'';return H.filter(h=>r[h.key]&&r[h.key][1]>=1).sort((a,b)=>(r[b.key][0]-50)*confR(r[b.key][1])-(r[a.key][0]-50)*confR(r[a.key][1])).slice(0,3).map(h=>h.name+' '+f1(r[h.key][0])+'%').join(' · ')}
+function topOnMap(mk){const r=D&&D.mapRates&&D.mapRates[mk];if(!r)return'';return H.filter(h=>r[h.key]&&r[h.key][1]>=1).sort((a,b)=>(r[b.key][0]-50)*confM(r[b.key][1])-(r[a.key][0]-50)*confM(r[a.key][1])).slice(0,3).map(h=>h.name+' '+f1(r[h.key][0])+'%').join(' · ')}
 function noData(){return`<div class="pn"><h2 class="nm">No data file yet</h2><p>This page gets everything from <b>data/meta.json</b>, which a daily GitHub workflow writes. It doesn’t exist in your repo yet.</p><p class="mut">Open your repo on GitHub → <b>Actions</b> tab → <b>Update data</b> → <b>Run workflow</b>. When it finishes (a few minutes), come back and press <b>Refresh</b>.</p></div>`}
 // ---------- views ----------
 function psLine(){const p=S.ps,c=p.st==='public'?'ok':p.st==='idle'||p.st==='checking'?'mut':'bad';return`<div class="mut ${c}" style="font-weight:600">${esc(p.msg)}</div>`}
-function mapList(){const q=S.q.toLowerCase();return M.filter(m=>(S.mode==='ALL'||m.modes.includes(S.mode))&&m.name.toLowerCase().includes(q)).map(m=>{const t=topOnMap(m.key);return`<button class="card ${m.key===S.map?'sel':''}" data-a="map" data-v="${esc(m.key)}" style="position:relative;overflow:hidden">${mapImg(m)}<div class="row"><span class="tag">${esc(m.modes.map(cap).join(' / ')||'Map')}</span>${m.fresh||!D||!D.mapRates||!D.mapRates[m.key]?'<span class="tag d">no stats yet</span>':''}</div><div class="nm tr" style="margin-top:4px">${esc(m.name)}</div><div class="mut tr">${esc(t)}</div></button>`}).join('')||'<div class="mut">No maps match.</div>'}
+function mapList(){const q=S.q.toLowerCase();return M.filter(m=>(S.mode==='ALL'||m.modes.includes(S.mode))&&m.name.toLowerCase().includes(q)).map(m=>{return`<button class="card ${m.key===S.map?'sel':''}" data-a="map" data-v="${esc(m.key)}" style="position:relative;overflow:hidden">${mapImg(m)}<div class="row"><span class="tag">${esc(m.modes.map(cap).join(' / ')||'Map')}</span>${m.fresh||!D||!D.mapRates||!D.mapRates[m.key]?'<span class="tag d">no stats yet</span>':''}</div><div class="nm tr" style="margin-top:4px">${esc(m.name)}</div></button>`}).join('')||'<div class="mut">No maps match.</div>'}
 function poolList(){const q=S.pq.toLowerCase(),P=S.prof;return H.filter(h=>(S.pf==='ALL'||h.role===S.pf)&&(!q||h.name.toLowerCase().includes(q))).sort((a,b)=>(P.mains.includes(b.key)-P.mains.includes(a.key))||a.name.localeCompare(b.name)).map(h=>{const mn=P.mains.includes(h.key),r=rt(h,'all');return`<div class="card ${mn?'sel':''}" data-a="main" data-v="${esc(h.key)}" style="cursor:pointer"><div class="rl">${av(h,30)}<div style="min-width:0"><div class="tr" style="font-weight:800">${mn?'★ ':''}${esc(h.name)}</div><div class="mut">${r?f1(r[0])+'% WR':'no stats yet'}</div></div></div>${mn?`<div class="row" style="margin-top:6px" onclick="event.stopPropagation()"><span class="mut">My WR%</span><input type="number" step="0.5" min="25" max="95" value="${P.pwr[h.key]!=null?P.pwr[h.key]:''}" placeholder="—" data-wr="${esc(h.key)}" style="width:64px"></div>`:''}</div>`}).join('')}
 function pickRow(x,i){const h=x.h,P=S.prof,cw=cwOf(h);
 const bits=[f1(x.r[1])+'% pick'];if(x.r[2]!=null)bits.push(f1(x.r[2])+'% ban');if(mapO()&&mapRt(h))bits.push(sg(x.md)+' on this map');
-return`<div class="card pk" data-a="insp" data-v="pick:${i}"><span class="tag a">#${i+1}</span>${av(h)}<div class="tx"><div class="nr"><span class="nm">${esc(h.name)}</span>${cw.tier?`<span class="tag">CW ${esc(cw.tier)}</span>`:''}${cw.lean?`<span class="tag">${esc(cw.lean)}</span>`:''}${P.comfort&&x.main?'<span class="tag a">★ Main</span>':''}${x.ce.length?`<span class="tag" style="color:var(--gd)">+${x.ce.length} counter</span>`:''}</div><div class="tr2">${esc(bits.join(' · '))}</div></div><div class="st"><div><div class="wr">${f1(x.wr)}%</div><div class="mut">Win rate</div></div><button class="b r" data-a="ban" data-v="${esc(h.name)}">Ban</button></div></div>`}
+const on=S.chosen===h.key;
+return`<div class="card pk ${on?'sel':''}" data-a="insp" data-v="pick:${i}"><span class="tag a">#${i+1}</span>${av(h)}<div class="tx"><div class="nr"><span class="nm">${esc(h.name)}</span>${cw.tier?`<span class="tag">CW ${esc(cw.tier)}</span>`:''}${cw.lean?`<span class="tag">${esc(cw.lean)}</span>`:''}${P.comfort&&x.main?'<span class="tag a">★ Main</span>':''}${x.ce.length?`<span class="tag" style="color:var(--gd)">+${x.ce.length} counter</span>`:''}</div><div class="tr2">${esc(bits.join(' · '))}</div></div><div class="st"><div><div class="wr">${f1(x.wr)}%</div><div class="mut">Win rate</div></div><button class="b ${on?'on2':''}" data-a="choose" data-v="${esc(h.key)}" title="Mark as the hero you're playing">✓ ${on?'Playing':'Play'}</button><button class="b r" data-a="ban" data-v="${esc(h.name)}">Ban</button></div></div>`}
 function banRow(b,i){return`<div class="card pk" data-a="insp" data-v="ban:${i}"><span class="tag d">#${i+1}</span>${av(b.h)}<div class="tx"><div class="nr"><span class="nm">${esc(b.h.name)}</span>${b.best?'<span class="tag d">counters your pick</span>':''}</div><div class="tr2">${esc(banReason(b))}</div></div><div class="st"><div><div class="wr d">${b.r[2]!=null?f1(b.r[2])+'%':'—'}</div><div class="mut">Ban rate</div></div><button class="b" data-a="ban" data-v="${esc(b.h.name)}">✓ Ban</button></div></div>`}
 function header(){const P=S.prof,st=S.ps.st,pc=st==='public'?'public':st==='checking'?'checking':'off';
 const label=st==='public'?'Public · '+P.mains.length+' mains':st==='checking'?'Checking…':(st==='private'?'Private':'Not public')+(P.comfort&&P.mains.length?' · '+P.mains.length+' custom':' · pure meta');
@@ -213,7 +219,7 @@ if(S.step===2)return`<div class="pn"><div class="mut">STEP 2 OF 4 · ${esc(divLa
 if(S.step===3){const modes=[...new Set(M.flatMap(m=>m.modes))].sort();return`<div class="pn"><div class="mut">STEP 3 OF 4</div><h2 class="nm">Select competitive map</h2><div class="pills" style="margin:8px 0">${['ALL',...modes].map(x=>`<button class="b ${S.mode===x?'on2':''}" data-a="mode" data-v="${esc(x)}">${esc(cap(x))}</button>`).join('')}</div><input id="mq" placeholder="Quick filter map…" value="${esc(S.q)}" style="width:100%;margin-bottom:8px"><div id="maplist" class="g g3">${mapList()}</div></div>`}
 const m=mapO(),picks=recommend(),bs=bansCalc(picks);
 return`<div class="pn" style="position:relative;overflow:hidden">${mapImg(m)}<div class="row"><div><span class="tag a">${esc(m?m.modes.map(cap).join(' / '):'')}</span> <span class="nm">${esc(m?m.name:'')}</span><div class="mut">${m&&topOnMap(m.key)?'Best here (all ranks): '+esc(topOnMap(m.key)):'No map stats yet'}</div><div class="mut">Tap any card for details</div></div></div></div>
-<div class="g g2"><div class="pn"><h3 class="nm">Top ${S.role==='ALL'?'picks by role':'3 picks'}</h3><div class="g" style="margin-top:8px">${picks.map(pickRow).join('')||'<div class="mut">No hero stats for this rank yet.</div>'}</div></div><div class="pn"><h3 class="nm">Top 3 priority bans</h3><div class="g" style="margin-top:8px">${bs.map(banRow).join('')||'<div class="mut">No ban data for this rank yet.</div>'}</div></div></div>
+<div class="g g2"><div class="pn"><h3 class="nm">Top ${S.role==='ALL'?'picks by role':'3 picks'}</h3><div class="g" style="margin-top:8px">${picks.map(pickRow).join('')||'<div class="mut">No hero stats for this rank yet.</div>'}</div></div><div class="pn"><h3 class="nm">${chosenHero()?'Top 3 bans for your '+esc(chosenHero().name):'Top 3 priority bans'}</h3><div class="g" style="margin-top:8px">${bs.map(banRow).join('')||'<div class="mut">No ban data for this rank yet.</div>'}</div></div></div>
 <div class="row"><div class="rl"><button class="b" data-a="modal" data-v="sim">Counter sim (${banned().length}B / ${enemies().length}E)</button><button class="b ${S.prof.comfort?'on2':''}" data-a="comfort">★ My mains: ${S.prof.comfort?'ON':'OFF'}</button></div><button class="b" data-a="reset">Reset</button></div>`}
 function sheet(inner){return`<div class="mo" data-a="close"><div class="sh">${inner}</div></div>`}
 const xbtn='<button class="b" data-a="close">✕</button>';
@@ -231,7 +237,7 @@ return sheet(`<div class="row"><h2 class="nm">Where the data comes from</h2>${xb
 <div class="mut" style="margin:6px 0">Nothing on this page is typed in by hand. A GitHub workflow collects it once a day into data/meta.json${D?' (last run '+esc(new Date(D.updated).toLocaleString())+')':''}.</div>
 <div class="g">${Object.keys(NM).map(k=>{const s=src[k];return`<div class="card"><div class="row"><b>${esc(NM[k])}</b><span class="tag ${s&&s.ok?'a':'d'}">${s?(s.ok?'OK':s.stale?'FAILED · showing older data':'FAILED'):'not run'}</span></div><div class="mut">${s?esc((s.ok?'Updated '+new Date(s.at).toLocaleString()+' · '+(s.count!=null?s.count+' items':'')+(s.note?' · '+s.note:''):(s.error||'')+(s.staleAt?' · older data from '+new Date(s.staleAt).toLocaleDateString():''))):'No result yet. Run the workflow.'}</div></div>`}).join('')}</div>
 <div class="card" style="margin-top:8px"><b>Live roster check</b><div class="mut">${LIVE.ok?'OverFast reports '+LIVE.heroes.length+' heroes and '+LIVE.maps.length+' maps right now. New heroes and maps appear here automatically'+(newH||newM?': '+newH+' new hero(es) and '+newM+' new map(s) since the last data run, shown without stats until the next run.':'; none are new since the last data run.'):'Could not reach OverFast. Showing the roster from the data file.'}</div></div>
-<div class="card" style="margin-top:8px"><b>How the numbers are used</b><ul class="mut" style="margin:6px 0 0;padding-left:18px"><li>Win rate shown = official win rate at your rank, plus the hero’s map win rate minus its all-maps win rate for the selected map.</li><li>Matchup bonus = 0.25 × Counterwatch’s counter rating per enemy hero you enter, capped at ±8.</li><li>Heroes under 1% pick rate are left out of picks and bans.</li><li>Bans target the heroes that counter your top picks (and your starred mains, if on), weighted with their win rate.</li><li>Perk percentages are community votes, not match results.</li></ul></div>
+<div class="card" style="margin-top:8px"><b>How the numbers are used</b><ul class="mut" style="margin:6px 0 0;padding-left:18px"><li>The win rate shown is Blizzard’s official one at your rank. Picks are ranked on that rate weighted by how often the hero is played, so a rarely picked hero with a lucky rate can’t jump to the top.</li><li>The selected map adds a bonus: the hero’s win rate on that map minus its all-maps rate, weighted the same way using its pick rate there.</li><li>Matchup bonus = 0.25 × Counterwatch’s counter rating per enemy hero you enter, capped at ±8.</li><li>Heroes under 1% pick rate are left out of picks and bans.</li><li>Tick “Play” on a pick and the bans switch to the heroes that counter that hero most (with their weighted win rate). With nothing ticked, bans target your top picks and starred mains.</li><li>Perk percentages are community votes, not match results.</li></ul></div>
 <div class="rl" style="margin-top:10px"><button class="b p" data-a="refresh">Refresh now</button></div>`)}
 if(S.modal==='profile'){const divs=(D&&D.divisions)||[];return sheet(`<div class="row"><div><h2 class="nm">${esc(P.tag)}</h2>${psLine()}</div>${xbtn}</div>
 <div class="rl" style="margin:8px 0"><input id="tag" value="${esc(P.tag)}" style="flex:1" aria-label="BattleTag"><button class="b p" data-a="savetag">Check / sync</button></div><div class="mut">Career Profile must be set to Public in Overwatch (Options → Social) for ranks and hero stats to sync. You can always set everything by hand below.</div>
@@ -254,7 +260,7 @@ return sheet(`<div class="row"><div class="rl">${av(h,56)}<div><span class="tag 
 <div class="g g2" style="margin-top:8px"><div class="card"><div class="mut" style="color:var(--gd)">BEATS (Counterwatch)</div>${chips(beatsOf(h,4))}</div><div class="card"><div class="mut" style="color:var(--rd)">COUNTERED BY (Counterwatch)</div>${chips(countersOf(h,4))}</div></div>
 ${cw.duos&&cw.duos.length?`<div class="card" style="margin-top:8px"><div class="mut">BEST DUOS · combined win rate (Counterwatch)</div>${cw.duos.map(d=>{const o=hk(d[0]);return o?esc(o.name)+' '+f1(d[1])+'%':''}).filter(Boolean).join(' · ')}</div>`:''}
 ${perkBlock(h)}${patchBlock(h)}
-<div class="rl" style="margin-top:10px"><button class="b r" style="flex:1" data-a="banclose" data-v="${esc(h.name)}">Mark banned in lobby</button><button class="b p" data-a="close">Done</button></div>`)}
+<div class="rl" style="margin-top:10px;flex-wrap:wrap"><button class="b ${S.chosen===h.key?'on2':''}" style="flex:1" data-a="chooseclose" data-v="${esc(h.key)}">✓ ${S.chosen===h.key?'Playing':'Play this hero'}</button><button class="b r" style="flex:1" data-a="banclose" data-v="${esc(h.name)}">Mark banned</button><button class="b p" data-a="close">Done</button></div>`)}
 const b=it.d,h=b.h;
 return sheet(`<div class="row"><div class="rl">${av(h,56)}<div><span class="tag d">Priority ban #${it.i+1}</span><h2 class="nm">Ban ${esc(h.name)}</h2><div class="mut">${b.r[2]!=null?f1(b.r[2])+'% ban rate · ':''}${f1(b.wr)}% win rate</div></div></div>${xbtn}</div>
 <div class="card" style="margin-top:10px"><div class="mut" style="color:var(--rd)">WHY BAN ${esc(h.name.toUpperCase())}</div>${esc(banReason(b))}</div>
@@ -266,16 +272,16 @@ function logoFail(i){if(!i.dataset.t){i.dataset.t='1';i.src='logo.svg'}else i.pa
 let toastT;function toast(t){const e=document.createElement('div');e.className='toast';e.textContent=t;document.body.appendChild(e);clearTimeout(toastT);toastT=setTimeout(()=>e.remove(),4200)}
 function render(){const y=window.scrollY;document.title='Overwatch '+(D&&D.season?'S'+D.season.number+' ':'')+'Draft Assistant';document.getElementById('app').innerHTML=header()+(D?nav():'')+step()+modal();window.scrollTo(0,y)}
 // ---------- actions ----------
-function toggleBan(n){const i=S.bans.indexOf(n);if(i>-1)S.bans[i]=null;else{const e=S.bans.indexOf(null);S.bans[e<0?3:e]=n}S.enemy=S.enemy.map(x=>x===n?null:x)}
+function toggleBan(n){const bh=hn(n);if(bh&&S.chosen===bh.key)S.chosen=null;const i=S.bans.indexOf(n);if(i>-1)S.bans[i]=null;else{const e=S.bans.indexOf(null);S.bans[e<0?3:e]=n}S.enemy=S.enemy.map(x=>x===n?null:x)}
 function setEnemy(n){const h=hn(n);if(!h)return;if(S.enemy.includes(n)){S.enemy=S.enemy.map(x=>x===n?null:x);return}
 const slots=h.role==='TANK'?[0]:h.role==='DAMAGE'?[1,2]:[3,4];const free=slots.find(i=>!S.enemy[i]);S.enemy[free!==undefined?free:slots[slots.length-1]]=n}
 const A={
 step:v=>S.step=+v,rank:v=>{S.rank=v;S.step=2},
-role:v=>{S.role=v;const pr=S.prof.ranks[v];if(S.prof.auto&&v!=='ALL'&&pr&&((D&&D.divisions)||[]).some(d=>d.key===pr))S.rank=pr;S.step=3},
+role:v=>{S.role=v;S.chosen=null;const pr=S.prof.ranks[v];if(S.prof.auto&&v!=='ALL'&&pr&&((D&&D.divisions)||[]).some(d=>d.key===pr))S.rank=pr;S.step=3},
 map:v=>{S.map=v;S.step=4},mode:v=>S.mode=v,modal:v=>S.modal=v,close:()=>{S.modal=null;S.picker=null},
-ban:v=>toggleBan(v),banclose:v=>{toggleBan(v);S.modal=null},enemyclose:v=>{setEnemy(v);S.modal=null},
+choose:v=>{S.chosen=S.chosen===v?null:v},chooseclose:v=>{S.chosen=S.chosen===v?null:v;S.modal=null},ban:v=>toggleBan(v),banclose:v=>{toggleBan(v);S.modal=null},enemyclose:v=>{setEnemy(v);S.modal=null},
 comfort:()=>{S.prof.comfort=!S.prof.comfort;save()},
-reset:()=>{S.bans=[null,null,null,null];S.enemy=[null,null,null,null,null];S.step=1},
+reset:()=>{S.chosen=null;S.bans=[null,null,null,null];S.enemy=[null,null,null,null,null];S.step=1},
 main:v=>{const m=S.prof.mains,i=m.indexOf(v);if(i>-1)m.splice(i,1);else m.push(v);save()},
 pf:v=>S.pf=v,clear:()=>{S.bans=[null,null,null,null];S.enemy=[null,null,null,null,null]},
 slot:v=>{if(!v){S.picker=null;return}const p=v.split(':');S.picker={t:p[0],i:+p[1],r:p[2]}},
