@@ -4,7 +4,7 @@
 //
 // Sources:
 //   OverFast API   official Blizzard win/pick/ban rates (by rank and map), roster, maps, roles
-//   Counterwatch   hero-vs-hero counter ratings, best duos, tier, comp lean, season number
+//   Counterwatch   hero-vs-hero counter ratings, season number
 //   Blizzard       latest official patch notes
 //   owperks.com    perk descriptions with community vote share
 import fs from 'node:fs/promises';
@@ -27,7 +27,7 @@ async function http(url, { json = false, tries = 4 } = {}) {
   let last;
   for (let i = 0; i < tries; i++) {
     try {
-      const r = await fetch(url, { headers: { 'user-agent': UA, accept: json ? 'application/json' : 'text/html,*/*' } });
+      const r = await fetch(url, { headers: { 'user-agent': UA, accept: json ? 'application/json' : 'text/html,*/*' }, signal: AbortSignal.timeout(30000) });
       if (r.status === 429 || r.status >= 500) {
         last = new Error('HTTP ' + r.status + ' for ' + url);
         await sleep(Math.max((+r.headers.get('retry-after') || 0) * 1000, 1500 * (i + 1)));
@@ -64,15 +64,6 @@ export const flat = html => toLines(html).join(' ');
 const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const nameAlt = names => [...new Set(names)].sort((a, b) => b.length - a.length).map(reEsc).join('|');
 const LABEL = { 'Wins the 1v1': 'duel', 'Team pressure': 'team', 'Mixed threat': 'mixed' };
-const ROLE = '(?:Tank|Damage|Support)';
-
-function section(text, startRe, endRes) {
-  const m = text.search(startRe);
-  if (m < 0) return '';
-  let end = text.length;
-  for (const e of endRes) { const k = text.slice(m + 10).search(e); if (k >= 0) end = Math.min(end, m + 10 + k); }
-  return text.slice(m, end);
-}
 
 // ---- Counterwatch: every entry is a link to a hero page, so read the links ----
 function heroAnchors(html) {
@@ -95,29 +86,6 @@ export function parseCountersPage(html, selfSlug) {
   }
   return out;
 }
-// Hero page: tier, comp lean and strongest duos (combined win rate).
-export function parseHeroPage(html) {
-  const f = flat(html);
-  const lean = (f.match(/Leans\s*(DIVE|RUSH|POKE)/i) || [])[1];
-  const tier = (html.match(/\bis ([SABCDF]) tier in Overwatch/i) || f.match(/Tier\s*([SABCDF])(?![a-z])/) || [])[1];
-  const duos = [];
-  const i = html.search(/strongest duos/i);
-  if (i >= 0) {
-    const rest = html.slice(i + 12);
-    const j = rest.search(/See all duos|Heroes to ban against|Ban suggestions|Counter picking guides/i);
-    const seen = new Set();
-    for (const a of heroAnchors(j >= 0 ? rest.slice(0, j) : rest.slice(0, 8000))) {
-      const m = a.text.match(/(\d{2}(?:\.\d+)?)%/);
-      if (!m || seen.has(a.slug)) continue;
-      const w = parseFloat(m[1]);
-      if (w < 30 || w > 80) continue;
-      seen.add(a.slug);
-      duos.push({ slug: a.slug, w });
-    }
-  }
-  return { lean: lean ? lean.toLowerCase() : null, tier: tier || null, duos: duos.slice(0, 5) };
-}
-
 // ---- Perks (owperks.com lists every hero on one page) ----
 // "<Hero> View full statistics Minor Perks Community Choice <Name> 72% <text> ... Major Perks Community Choice ..."
 export function parsePerks(html, names) {
@@ -194,7 +162,7 @@ export async function main() {
   const prev = await readPrev();
   const meta = { updated: new Date().toISOString(), sources: {} };
   const ok = (k, count, note) => { meta.sources[k] = { ok: true, at: new Date().toISOString(), count, note: note || '' }; log('OK  ', k, count, note || ''); };
-  const bad = (k, e) => { meta.sources[k] = { ok: false, at: new Date().toISOString(), error: String(e.message || e).slice(0, 300), stale: !!(prev && prev.sources && prev.sources[k] && prev.sources[k].ok !== undefined) }; log('FAIL', k, e.message || e); };
+  const bad = (k, e) => { meta.sources[k] = { ok: false, at: new Date().toISOString(), error: String(e.message || e).slice(0, 300) }; log('FAIL', k, e.message || e); };
 
   // 1. OverFast roster (required)
   const [hs, ms, rs] = await Promise.all([http(OF + '/heroes', { json: true }), http(OF + '/maps', { json: true }), http(OF + '/roles', { json: true })]);
@@ -222,14 +190,15 @@ export async function main() {
     const hasAll = divValues.includes('all');
     const divs = hasAll ? divValues : ['all', ...divValues];
     const rates = {}, mapRates = {};
-    const fetchRates = async extra => {
+    const fetchRates = async (extra, withBan = true) => {
       const q = new URLSearchParams(base);
       Object.entries(extra).forEach(([k, v]) => v != null && q.set(k, v));
       const j = await http(OF + P + '?' + q, { json: true });
       const o = {};
       asList(j).forEach(x => {
         const k = x.hero || x.key; if (!k) return;
-        if (typeof x.winrate === 'number') o[k] = [+x.winrate.toFixed(2), +(x.pickrate ?? 0).toFixed(2), typeof x.banrate === 'number' ? +x.banrate.toFixed(2) : null];
+        if (typeof x.winrate === 'number') o[k] = [+x.winrate.toFixed(2), +(x.pickrate ?? 0).toFixed(2)];
+        if (withBan) o[k].push(typeof x.banrate === 'number' ? +x.banrate.toFixed(2) : null);
       });
       return o;
     };
@@ -248,7 +217,7 @@ export async function main() {
       const m = byNk.get(nk(v)) || null;
       const key = nk(m ? m.name : v);
       try {
-        const r = await fetchRates({ [pMap.name]: v });
+        const r = await fetchRates({ [pMap.name]: v }, false);
         if (Object.keys(r).length) {
           mapRates[key] = r;
           meta.maps.push({ key, name: m ? m.name : cap(v), modes: m ? m.gamemodes || [] : [], img: m ? m.screenshot || '' : '' });
@@ -264,9 +233,10 @@ export async function main() {
 
   const names = roster.map(h => h.name);
   const byNameNk = new Map(roster.map(h => [nk(h.name), h]));
-  const bySlug = slug => roster.find(h => nk(h.key) === nk(slug) || nk(h.name) === nk(slug));
+  const heroBy = new Map(roster.flatMap(h => [[nk(h.key), h], [nk(h.name), h]]));
+  const bySlug = slug => heroBy.get(nk(slug));
 
-  // 3. Counterwatch: season, tier, lean, duos, full counter matrix
+  // 3. Counterwatch: season and the counter matrix (ratings under 1 point are noise and are left out)
   try {
     const list = await http(CW + '/stats/overwatch/heroes');
     const slugs = [...new Set([...list.matchAll(/\/stats\/overwatch\/heroes\/([a-z0-9-]+)/g)].map(m => m[1]))].filter(x => !/^opengraph/i.test(x));
@@ -276,34 +246,25 @@ export async function main() {
       const sm = tl.match(/Tier List\W*Season (\d{1,3})/i) || tl.match(/Season (\d{1,3})/);
       if (sm && +sm[1] >= 1 && +sm[1] <= 99) meta.season = { number: +sm[1], source: 'counterwatch.gg' };
     } catch (e) { log('  season lookup failed:', e.message); }
-    const cw = {}, counters = {};
-    let heroPages = 0, counterPages = 0, shown = 0;
+    const counters = {};
+    let counterPages = 0, shown = 0;
     for (const slug of slugs) {
       const h = bySlug(slug);
       if (!h) { log('  no roster match for Counterwatch slug', slug); continue; }
-      try {
-        const html = await http(CW + '/stats/overwatch/heroes/' + slug);
-        const hp = parseHeroPage(html);
-        if (hp.tier || hp.lean || hp.duos.length) {
-          cw[h.key] = { tier: hp.tier, lean: hp.lean, duos: hp.duos.map(d => { const o = bySlug(d.slug); return o ? [o.key, d.w] : null; }).filter(Boolean) };
-          heroPages++;
-        } else if (shown++ < 2) log('  DIAG hero page found nothing for', slug, '| text starts:', flat(html).slice(0, 400));
-      } catch (e) { log('  hero page', slug, e.message); }
-      await sleep(700);
       try {
         const html = await http(CW + '/stats/overwatch/counters/' + slug);
         const es = parseCountersPage(html, slug);
         if (es.length) {
           counters[h.key] = {};
-          es.forEach(x => { const o = bySlug(x.slug); if (o && o.key !== h.key) counters[h.key][o.key] = [x.r, x.l]; });
+          es.forEach(x => { const o = bySlug(x.slug); if (o && o.key !== h.key && Math.abs(x.r) >= 1) counters[h.key][o.key] = [x.r, x.l]; });
           counterPages++;
         } else if (shown++ < 2) log('  DIAG counters page found nothing for', slug, '| links:', heroAnchors(html).length, '| text starts:', flat(html).slice(0, 400));
       } catch (e) { log('  counters page', slug, e.message); }
       await sleep(700);
     }
-    if (heroPages < 10 || counterPages < 10) throw new Error(`parsed too little (${heroPages} hero pages, ${counterPages} counter pages); page layout may have changed`);
-    meta.cw = cw; meta.counters = counters;
-    ok('counterwatch', counterPages, `${heroPages} hero pages, season ${meta.season ? meta.season.number : 'unknown'}`);
+    if (counterPages < 10) throw new Error(`parsed only ${counterPages} counter pages; page layout may have changed`);
+    meta.counters = counters;
+    ok('counterwatch', counterPages, `season ${meta.season ? meta.season.number : 'unknown'}`);
   } catch (e) { bad('counterwatch', e); }
 
   // 4. Blizzard patch notes
@@ -311,7 +272,7 @@ export async function main() {
     const p = parsePatch(await http(PATCH_URL), roster);
     const n = Object.keys(p.heroes).length;
     if (!n) throw new Error('no hero changes found in the latest patch notes');
-    meta.patch = { title: p.title, date: p.date, url: PATCH_URL, heroes: p.heroes };
+    meta.patch = { date: p.date, heroes: p.heroes };
     ok('patchnotes', n, p.date || '');
   } catch (e) { bad('patchnotes', e); }
 
@@ -335,7 +296,7 @@ export async function main() {
     }
   };
   keep('rates', ['rates', 'mapRates', 'divisions', 'maps', 'knownMaps', 'region']);
-  keep('counterwatch', ['cw', 'counters', 'season']);
+  keep('counterwatch', ['counters', 'season']);
   keep('patchnotes', ['patch']);
   keep('perks', ['perks']);
   if (!meta.rates && !meta.divisions) throw new Error('no rates available at all; keeping previous file');
