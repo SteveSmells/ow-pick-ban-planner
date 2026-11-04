@@ -157,22 +157,22 @@ sc.push({h,r,md,main,pw,cf,mb,total:shrunk(r)+md+cf})});
 sc.sort((a,b)=>b.total-a.total);
 if(S.role==='ALL')return RL.map(ro=>sc.find(x=>x.h.role===ro.id)).filter(Boolean);
 return sc.slice(0,3)}
-function bansCalc(picks){
+function bansCalc(){
 if(!D||!D.rates)return[];
 const P=S.prof;
-const tg=picks.map(p=>p.h);
-const ch=chosenHero(),T=ch?[ch]:tg.slice(0,4),W=[1,.7,.5,.35],protect=new Set(P.comfort?[...MAINS]:[]);
+const ch=chosenHero(),T=ch?[ch]:[];
 const out=[];
-H.forEach(h=>{if(protect.has(h.key)||T.includes(h))return;
+H.forEach(h=>{if(h===ch)return;
 const r=rt(h);if(!r||r[1]<1)return;
 let s=0,best=null;
-T.forEach((t,i)=>{const c=ctr(h,t);if(c&&c[0]>0){const v=c[0]*W[i];s+=v;if(!best||v>best.v)best={v,t:t.name,r:c[0],l:c[1]}}});
-out.push({h,r,best,total:(s+(shrunk(r)+mapDelta(h)-50)*0.8)*r[1]/(r[1]+5)})});   // harm to you x how often the hero is actually played
+T.forEach(t=>{const c=ctr(h,t);if(c&&c[0]>0){const v=c[0]/T.length;s+=v;if(!best||v>best.v)best={v,t:t.name,r:c[0],l:c[1]}}});
+out.push({h,r,best,total:(0.5*s+(shrunk(r)+mapDelta(h)-50))*r[1]/(r[1]+5)})});   // (half the counter rating + win-rate edge) x how often the hero is played
 out.sort((a,b)=>b.total-a.total);
 return out.slice(0,3)}
 function banReason(b){const p=[];
 if(b.best)p.push('Counters '+(chosenHero()?'your ':'')+b.best.t+' ('+sg(b.best.r)+(b.best.l?', '+LBL[b.best.l]:'')+')');
 p.push(f1(b.r[0])+'% win rate'+(mapO()?' here':'')+' at '+divLabel(S.rank));
+if(!b.best)p.push(f1(b.r[1])+'% pick');
 if(b.r[2]!=null)p.push(f1(b.r[2])+'% ban rate');
 return p.join(' · ')}
 function pickLines(x){const h=x.h,m=mapO(),L=[];
@@ -212,9 +212,9 @@ if(!D)return'<div class="pn"><div class="mut">Loading…</div></div>';
 if(S.step===1){const divs=D.divisions||[];return`<div class="pn"><div class="mut">STEP 1 OF 4</div><h2 class="nm">Select your rank</h2><div class="g g2" style="margin-top:8px">${divs.map(d=>{const mine=Object.keys(S.prof.ranks).filter(r=>S.prof.ranks[r]===d.key);return`<button class="card ${S.rank===d.key?'sel':''}" data-a="rank" data-v="${esc(d.key)}"><div class="row"><div class="nm">${esc(d.label)}</div>${mine.length?`<span class="tag a">Your ${mine.map(r=>esc(cap(r))).join(' / ')}</span>`:''}</div><div class="mut">Top win rates: ${esc(topHeroes(D.rates&&D.rates[d.key],confR)||'no data')}</div></button>`}).join('')}</div><div class="mut" style="margin-top:8px">Official Blizzard rates, region ${esc(D.region?cap(D.region):'default')}.</div></div>`}
 if(S.step===2)return`<div class="pn"><div class="mut">STEP 2 OF 4 · ${esc(divLabel(S.rank))}</div><h2 class="nm">Select your role</h2><div class="g g2" style="margin-top:8px">${[{id:'ALL',name:'Flex 5v5',desc:'The best pick for every role at once.'},...RL].map(r=>`<button class="card ${S.role===r.id?'sel':''}" data-a="role" data-v="${esc(r.id)}"><div class="rl"><span class="rib ${esc(r.id)}c">${rIcon(r.id)}</span><div style="min-width:0"><div class="nm">${esc(r.name)}${S.prof.ranks[r.id]?` <span class="tag a">${esc(divLabel(S.prof.ranks[r.id]))}</span>`:''}</div><div class="mut">${esc(r.desc)}</div></div></div></button>`).join('')}</div></div>`;
 if(S.step===3){const modes=[...new Set(M.flatMap(m=>m.modes))].sort();return`<div class="pn"><div class="mut">STEP 3 OF 4</div><h2 class="nm">Select competitive map</h2><div class="pills" style="margin:8px 0">${['ALL',...modes].map(x=>`<button class="b ${S.mode===x?'on2':''}" data-a="mode" data-v="${esc(x)}">${esc(cap(x))}</button>`).join('')}</div><input id="mq" placeholder="Quick filter map…" value="${esc(S.q)}" style="width:100%;margin-bottom:8px"><div id="maplist" class="g g3">${mapList()}</div></div>`}
-const m=mapO(),picks=recommend(),bs=bansCalc(picks),best=m&&topHeroes(D.mapRates&&D.mapRates[m.key],confM);
+const m=mapO(),picks=recommend(),bs=bansCalc(),best=m&&topHeroes(D.mapRates&&D.mapRates[m.key],confM);
 return`<div class="pn" style="position:relative;overflow:hidden">${mapImg(m)}<div class="row"><div><span class="tag a">${esc(m?m.modes.map(cap).join(' / '):'')}</span> <span class="nm">${esc(m?m.name:'')}</span><div class="mut">${best?'Best here (all ranks): '+esc(best):'No map stats yet'}</div><div class="mut">Tap any card for details</div></div></div></div>
-<div class="g g2"><div class="pn"><h3 class="nm">Top ${S.role==='ALL'?'picks by role':'3 picks'}</h3><div class="g" style="margin-top:8px">${picks.map(pickRow).join('')||'<div class="mut">No hero stats for this rank yet.</div>'}</div></div><div class="pn"><h3 class="nm">${chosenHero()?'Top 3 bans for your '+esc(chosenHero().name):'Top 3 priority bans'}</h3><div class="g" style="margin-top:8px">${bs.map(banRow).join('')||'<div class="mut">No ban data for this rank yet.</div>'}</div></div></div>
+<div class="g g2"><div class="pn"><h3 class="nm">Top ${S.role==='ALL'?'picks by role':'3 picks'}</h3><div class="g" style="margin-top:8px">${picks.map(pickRow).join('')||'<div class="mut">No hero stats for this rank yet.</div>'}</div></div><div class="pn"><h3 class="nm">${chosenHero()?'Top 3 bans for your '+esc(chosenHero().name):'Top 3 bans for this rank and map'}</h3><div class="g" style="margin-top:8px">${bs.map(banRow).join('')||'<div class="mut">No ban data for this rank yet.</div>'}</div></div></div>
 <div class="row"><button class="b ${S.prof.comfort?'on2':''}" data-a="comfort">★ My heroes: ${S.prof.comfort?'ON':'OFF'}</button><button class="b" data-a="reset">Reset</button></div>`}
 function sheet(inner){return`<div class="mo" data-a="close"><div class="sh">${inner}</div></div>`}
 const xbtn='<button class="b" data-a="close">✕</button>';
@@ -232,7 +232,7 @@ return sheet(`<div class="row"><h2 class="nm">Where the data comes from</h2>${xb
 <div class="mut" style="margin:6px 0">Nothing on this page is typed in by hand. A GitHub workflow collects it once a day into data/meta.json${D?' (last run '+esc(new Date(D.updated).toLocaleString())+')':''}.</div>
 <div class="g">${Object.keys(NM).map(k=>{const s=src[k];return`<div class="card"><div class="row"><b>${esc(NM[k])}</b><span class="tag ${s&&s.ok?'a':'d'}">${s?(s.ok?'OK':s.stale?'FAILED · showing older data':'FAILED'):'not run'}</span></div><div class="mut">${s?esc((s.ok?'Updated '+new Date(s.at).toLocaleString()+' · '+(s.count!=null?s.count+' items':'')+(s.note?' · '+s.note:''):(s.error||'')+(s.staleAt?' · older data from '+new Date(s.staleAt).toLocaleDateString():''))):'No result yet. Run the workflow.'}</div></div>`}).join('')}</div>
 <div class="card" style="margin-top:8px"><b>Live roster check</b><div class="mut">${LIVE.ok?'OverFast reports '+LIVE.heroes.length+' heroes and '+LIVE.maps.length+' maps right now. New heroes and maps appear here automatically'+(newH||newM?': '+newH+' new hero(es) and '+newM+' new map(s) since the last data run, shown without stats until the next run.':'; none are new since the last data run.'):'Could not reach OverFast. Showing the roster from the data file.'}</div></div>
-<div class="card" style="margin-top:8px"><b>How the numbers are used</b><ul class="mut" style="margin:6px 0 0;padding-left:18px"><li>The win rate shown is Blizzard’s official one at your rank. Picks are ranked on that rate weighted by how often the hero is played, so a rarely picked hero with a lucky rate can’t jump to the top.</li><li>The selected map adds a bonus: the hero’s win rate on that map minus its all-maps rate, weighted the same way using its pick rate there.</li><li>Heroes under 1% pick rate are left out of picks and bans.</li><li>Every hero you have played gets an experience bonus: up to +1.5 for familiarity (all game modes, scaled by games played), plus or minus a share of how your ranked win rate compares with the official rate at your rank, once you have 20+ ranked games on it. ★ Main only labels your 3 most-played heroes per role; it never changes a score.</li><li>Bans are ranked by how much they would hurt you: how strongly they counter your top 3 picks (Counterwatch’s counter ratings) plus their weighted win rate, multiplied by how often the hero is played at your rank. A strong counter that is rarely picked ranks below a slightly weaker one that shows up in most games. Tick “Play” on a pick and the bans switch to the heroes that counter that hero. Your ★ Main heroes are never suggested as bans.</li><li>Perk percentages are community votes, not match results.</li></ul></div>
+<div class="card" style="margin-top:8px"><b>How the numbers are used</b><ul class="mut" style="margin:6px 0 0;padding-left:18px"><li>The win rate shown is Blizzard’s official one at your rank. Picks are ranked on that rate weighted by how often the hero is played, so a rarely picked hero with a lucky rate can’t jump to the top.</li><li>The selected map adds a bonus: the hero’s win rate on that map minus its all-maps rate, weighted the same way using its pick rate there.</li><li>Heroes under 1% pick rate are left out of picks and bans.</li><li>Every hero you have played gets an experience bonus: up to +1.5 for familiarity (all game modes, scaled by games played), plus or minus a share of how your ranked win rate compares with the official rate at your rank, once you have 20+ ranked games on it. ★ Main only labels your 3 most-played heroes per role; it never changes a score.</li><li>With no hero ticked, bans are the strongest, most-played heroes for your rank and this map (win rate at your rank plus the map bonus, multiplied by how often the hero is played). Tick “Play” on a pick and the ranking also adds half of how strongly each hero counters that hero (Counterwatch’s rating), so you are protected without ignoring what helps the team.</li><li>Perk percentages are community votes, not match results.</li></ul></div>
 <div class="rl" style="margin-top:10px"><button class="b p" data-a="refresh">Refresh now</button></div>`)}
 const tagBox=`<input id="tagin" value="${esc(P.tag)}" placeholder="Name#12345" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="BattleTag" style="flex:1;min-width:130px">`;
 if(S.modal==='profile'&&!P.tag)return sheet(`<div class="row"><h2 class="nm">Connect your profile</h2>${xbtn}</div><p>Picks and bans use official stats only until you connect a BattleTag.</p>
@@ -245,7 +245,7 @@ if(S.modal==='profile'){const played=H.filter(h=>(P.time[h.key]||0)>0||(P.allGam
 <h3 class="nm" style="margin:12px 0 6px">Heroes you play (${played.length}, most played first)</h3>
 <div class="mut" style="margin-bottom:6px">★ Main marks your 3 most-played heroes in each role. It is only a label. Games count every mode; the win rate is ranked only.</div>
 <div class="g g3">${played.map(h=>`<div class="card ${MAINS.has(h.key)?'sel':''}"><div class="rl">${av(h,30)}<div style="min-width:0"><div class="tr" style="font-weight:800">${MAINS.has(h.key)?'★ ':''}${esc(h.name)}</div><div class="mut">${P.allGames[h.key]||0} games · ${P.games[h.key]?(P.pwr[h.key]!=null?f1(P.pwr[h.key])+'% ranked ('+P.games[h.key]+')':'ranked '+P.games[h.key]):'no ranked games'}</div></div></div></div>`).join('')||'<div class="mut">None yet. Sync needs a public profile.</div>'}</div>
-<label class="rl" style="margin:12px 0 8px"><input type="checkbox" data-ck="comfort" ${P.comfort?'checked':''}> Boost heroes I play a lot in picks, and never suggest banning my top ones</label>
+<label class="rl" style="margin:12px 0 8px"><input type="checkbox" data-ck="comfort" ${P.comfort?'checked':''}> Boost heroes I play a lot in picks</label>
 <label class="rl"><input type="checkbox" data-ck="auto" ${P.auto?'checked':''}> Auto-match rank when selecting a role</label>`)}
 if(S.modal==='insp'&&S.insp){const it=S.insp;
 if(it.type==='pick'){const x=it.d,h=x.h;
@@ -273,7 +273,7 @@ map:v=>{S.map=v;S.step=4},mode:v=>S.mode=v,modal:v=>S.modal=v,close:()=>{S.modal
 choose:v=>{S.chosen=S.chosen===v?null:v},chooseclose:v=>{S.chosen=S.chosen===v?null:v;S.modal=null},
 comfort:()=>{S.prof.comfort=!S.prof.comfort;save()},
 reset:()=>{S.chosen=null;S.step=1},
-insp:v=>{const[t,i]=v.split(':');const picks=recommend();const d=t==='pick'?picks[+i]:bansCalc(picks)[+i];if(d){S.insp={type:t,i:+i,d};S.modal='insp'}},
+insp:v=>{const[t,i]=v.split(':');const d=t==='pick'?recommend()[+i]:bansCalc()[+i];if(d){S.insp={type:t,i:+i,d};S.modal='insp'}},
 resync:()=>{syncProfile()},
 connect:()=>{const t=parseTag((document.getElementById('tagin')||{}).value);if(!t){toast('Enter your BattleTag as Name#12345.');return}
 if(t!==S.prof.tag){clearSynced();S.prof.tag=t;S.ps={st:'checking',msg:'Checking…'}}save();syncProfile()},
