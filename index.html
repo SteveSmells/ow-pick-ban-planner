@@ -61,6 +61,7 @@ input,select{background:#0a0f1b;color:var(--tx);border:1px solid var(--bd);borde
 .on2{background:var(--ac)!important;color:var(--ink)!important;border-color:var(--ac)!important}
 .mbg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.28;pointer-events:none}.card>*,.pn>*{position:relative}.card>.mbg,.pn>.mbg{position:absolute}
 .ok{color:var(--gd)}.bad{color:var(--rd)}
+.pt{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:start}.pt .dev{border-left:3px solid var(--ac);padding:1px 0 1px 8px;margin:6px 0;color:var(--mu);font-size:13px;font-style:italic}.pt .ab{margin:8px 0 2px;font:italic 800 14px 'Barlow Condensed',sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--cy)}.pt ul{margin:2px 0 0;padding-left:18px}.pt li{margin:3px 0;font-size:13px}.rolehd{display:flex;align-items:center;gap:8px;margin:14px 0 6px}.rolehd .ri{width:20px;height:20px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:#f4f6fb;color:#0b0f19;padding:8px 14px;border-radius:10px;font-size:13px;font-weight:600;z-index:20;max-width:90%}
 </style>
 </head><body><div id="app"></div>
@@ -88,8 +89,8 @@ const clearSynced=()=>{const P=S.prof;P.ranks={};P.pwr={};P.games={};P.allGames=
 try{const t=parseTag(new URLSearchParams(location.search).get('tag'));if(t){if(t!==S.prof.tag)clearSynced();S.prof.tag=t;history.replaceState(null,'',location.pathname);save()}}catch(e){}
 if(!S.prof.tag)S.ps={st:'none',msg:'No BattleTag is connected on this device.'};
 // ---------- data ----------
-async function loadMeta(bust){
-try{const r=await fetch('data/meta.json'+(bust?'?t='+Date.now():''),{cache:'no-cache'});D=r.ok?await r.json():null}catch(e){D=null}}
+async function loadMeta(){
+try{const r=await fetch('data/meta.json',{cache:'no-cache'});D=r.ok?await r.json():null}catch(e){D=null}}
 async function loadLive(){
 try{const[h,m,r]=await Promise.allSettled([fetch(OF+'/heroes').then(x=>x.json()),fetch(OF+'/maps').then(x=>x.json()),fetch(OF+'/roles').then(x=>x.json())]);
 LIVE.ok=false;
@@ -188,7 +189,7 @@ const av=(h,sz)=>`<div class="av ${h.role}" ${sz?`style="width:${sz}px;height:${
 const mapImg=m=>m&&m.img?`<img class="mbg" src="${esc(m.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:'';
 function ago(ms){if(isNaN(ms))return 'at an unknown time';const d=Math.floor((Date.now()-ms)/864e5);return d<=0?'today':d===1?'yesterday':d+' days ago'}
 function topHeroes(r,conf){if(!r)return'';return H.filter(h=>r[h.key]&&r[h.key][1]>=1).sort((a,b)=>(r[b.key][0]-50)*conf(r[b.key][1])-(r[a.key][0]-50)*conf(r[a.key][1])).slice(0,3).map(h=>h.name+' '+f1(r[h.key][0])+'%').join(' · ')}
-function noData(){return`<div class="pn"><h2 class="nm">No data file yet</h2><p>This page gets everything from <b>data/meta.json</b>, which a daily GitHub workflow writes. It doesn’t exist in your repo yet.</p><p class="mut">Open your repo on GitHub → <b>Actions</b> tab → <b>Update data</b> → <b>Run workflow</b>. When it finishes (a few minutes), come back and press <b>Refresh</b>.</p></div>`}
+function noData(){return`<div class="pn"><h2 class="nm">No data file yet</h2><p>This page gets everything from <b>data/meta.json</b>, which a daily GitHub workflow writes. It doesn’t exist in your repo yet.</p><p class="mut">Open your repo on GitHub → <b>Actions</b> tab → <b>Update data</b> → <b>Run workflow</b>. When it finishes (a few minutes), come back and reload this page.</p></div>`}
 // ---------- views ----------
 function psLine(){const p=S.ps,c=p.st==='public'?'ok':['idle','checking','none'].includes(p.st)?'mut':'bad';return`<div class="mut ${c}" style="font-weight:600">${esc(p.msg)}</div>`}
 function mapList(){const q=S.q.toLowerCase();return M.filter(m=>(S.mode==='ALL'||m.modes.includes(S.mode))&&m.name.toLowerCase().includes(q)).map(m=>`<button class="card ${m.key===S.map?'sel':''}" data-a="map" data-v="${esc(m.key)}" style="position:relative;overflow:hidden">${mapImg(m)}<div class="row"><span class="tag">${esc(m.modes.map(cap).join(' / ')||'Map')}</span>${m.fresh||!D||!D.mapRates||!D.mapRates[m.key]?'<span class="tag d">no stats yet</span>':''}</div><div class="nm tr" style="margin-top:4px">${esc(m.name)}</div></button>`).join('')||'<div class="mut">No maps match.</div>'}
@@ -201,10 +202,10 @@ function header(){const P=S.prof,st=S.ps.st,pc=!P.tag?'off':st==='public'?'publi
 const label=!P.tag?'Not connected':st==='public'?'Public · '+Object.keys(P.time).filter(k=>P.time[k]>0).length+' heroes':st==='checking'?'Checking…':(st==='private'?'Private':'Not public')+(P.comfort&&Object.keys(P.allGames).length?' · boost on':' · pure meta');
 const col=!P.tag?'var(--mu)':st==='public'?'var(--gd)':st==='checking'?'var(--cy)':'var(--rd)';
 const t=D?Date.parse(D.updated):NaN,days=isNaN(t)?99:(Date.now()-t)/864e5,stale=!D||days>3;
-const sub=S.busy?'Refreshing…':D?'Data '+ago(t)+(D.patch&&D.patch.date?' · patch '+D.patch.date:''):'No data file yet';
+const sub=S.busy?'Loading…':D?'Data '+ago(t)+(D.patch&&D.patch.date?' · patch '+D.patch.date:''):'No data file yet';
 const sn=D&&D.season?D.season.number:null;
 return`<div class="hd"><div class="rl"><div class="crest"><img src="logo.png" alt="Overwatch" onerror="logoFail(this)"></div><div style="min-width:0"><div class="ttl">Overwatch <b>${sn?'S'+sn+' ':''}Draft</b></div><div class="sub"><i class="dot ${S.busy?'pulse':''}" style="background:${S.busy?'var(--ac)':stale?'var(--rd)':'var(--gd)'}"></i><span class="tr">${esc(sub)}</span></div></div></div>
-<div class="rl" style="flex-wrap:wrap"><button class="pill ${pc}" data-a="modal" data-v="profile" title="Career profile"><span class="pa">${P.avatar?`<img src="${esc(P.avatar)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">`:esc((P.tag[0]||'?').toUpperCase())}</span><span><b>${esc(P.tag?P.tag.split('#')[0]:'Profile')}</b><small style="color:${col}">${esc(label)}</small></span></button><button class="b p" data-a="refresh">${S.busy?'…':'Refresh'}</button><button class="b" data-a="modal" data-v="data">Data</button></div></div>`}
+<div class="rl" style="flex-wrap:wrap"><button class="pill ${pc}" data-a="modal" data-v="profile" title="Career profile"><span class="pa">${P.avatar?`<img src="${esc(P.avatar)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">`:esc((P.tag[0]||'?').toUpperCase())}</span><span><b>${esc(P.tag?P.tag.split('#')[0]:'Profile')}</b><small style="color:${col}">${esc(label)}</small></span></button><button class="b p" data-a="modal" data-v="patch">Patch notes</button><button class="b" data-a="modal" data-v="data">Data</button></div></div>`}
 function nav(){const m=mapO(),ro=S.role==='ALL'?'Flex 5v5':(RL.find(r=>r.id===S.role)||{}).name||cap(S.role),v=[divLabel(S.rank),ro,m?m.name:'—','3 Picks / 3 Bans'];return`<div class="nav">${v.map((x,i)=>`<button class="${S.step===i+1?'on':S.step>i+1?'done':''}" data-a="step" data-v="${i+1}"><small>${S.step>i+1?'✓ ':''}${i+1}. ${['Rank','Role','Map','Draft'][i]}</small><span>${esc(x)}</span></button>`).join('')}</div>`}
 function step(){
 if(!D&&S.loaded)return noData();
@@ -226,6 +227,16 @@ return`<div class="card" style="margin-top:8px"><div class="mut">LATEST PATCH NO
 const chips=a=>a.length?a.map(x=>esc(x.h.name)+' '+sg(x.r)).join(' · '):'<span class="mut">no data</span>';
 function modal(){
 const P=S.prof,m=mapO();
+if(S.modal==='patch'){const p=D&&D.patch,ph=(p&&p.heroes)||{};
+const list=Object.keys(ph).map(hk=>HB.get(hk)).filter(Boolean);
+const date=p&&p.date?new Date(p.date+'T12:00:00Z').toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'}):'';
+const body=ls=>{const marked=ls.some(l=>l.startsWith('• '));let out='',open=false;
+ls.forEach(l=>{const b=marked?l.startsWith('• '):(l.length>48||/[\d.;%]/.test(l)),t=esc(l.replace(/^•\s*/,''));
+if(b){if(!open){out+='<ul>';open=true}out+='<li>'+t+'</li>'}else{if(open){out+='</ul>';open=false}out+='<div class="ab">'+t+'</div>'}});
+return out+(open?'</ul>':'')};
+const groups=RL.map(r=>({r,hs:list.filter(h=>h.role===r.id)})).filter(g=>g.hs.length);
+return sheet(`<div class="row"><div><h2 class="nm">Latest patch notes</h2><div class="mut">${esc(date)}${date?' · ':''}${list.length} heroes changed</div></div>${xbtn}</div>
+${groups.map(g=>`<div class="rolehd">${rIcon(g.r.id)}<h3 class="nm">${esc(g.r.name)}</h3></div><div class="g">${g.hs.map(h=>{const c=ph[h.key];return`<div class="card pt">${av(h,46)}<div style="min-width:0"><div class="nm">${esc(h.name)}</div>${c.dev?`<div class="dev">${esc(c.dev)}</div>`:''}${body(c.lines||[])}</div></div>`}).join('')}</div>`).join('')||'<p class="mut" style="margin-top:10px">No patch notes in the data file yet. They appear after the next daily update.</p>'}`)}
 if(S.modal==='data'){const src=D&&D.sources||{},NM={roster:'Hero and map roster',rates:'Official win, pick and ban rates (Blizzard via OverFast)',counterwatch:'Matchups and season (Counterwatch)',patchnotes:'Patch notes (Blizzard)',perks:'Perks (owperks.com community votes)'};
 const newH=H.filter(h=>h.fresh).length,newM=M.filter(x=>x.fresh).length;
 return sheet(`<div class="row"><h2 class="nm">Where the data comes from</h2>${xbtn}</div>
@@ -233,7 +244,7 @@ return sheet(`<div class="row"><h2 class="nm">Where the data comes from</h2>${xb
 <div class="g">${Object.keys(NM).map(k=>{const s=src[k];return`<div class="card"><div class="row"><b>${esc(NM[k])}</b><span class="tag ${s&&s.ok?'a':'d'}">${s?(s.ok?'OK':s.stale?'FAILED · showing older data':'FAILED'):'not run'}</span></div><div class="mut">${s?esc((s.ok?'Updated '+new Date(s.at).toLocaleString()+' · '+(s.count!=null?s.count+' items':'')+(s.note?' · '+s.note:''):(s.error||'')+(s.staleAt?' · older data from '+new Date(s.staleAt).toLocaleDateString():''))):'No result yet. Run the workflow.'}</div></div>`}).join('')}</div>
 <div class="card" style="margin-top:8px"><b>Live roster check</b><div class="mut">${LIVE.ok?'OverFast reports '+LIVE.heroes.length+' heroes and '+LIVE.maps.length+' maps right now. New heroes and maps appear here automatically'+(newH||newM?': '+newH+' new hero(es) and '+newM+' new map(s) since the last data run, shown without stats until the next run.':'; none are new since the last data run.'):'Could not reach OverFast. Showing the roster from the data file.'}</div></div>
 <div class="card" style="margin-top:8px"><b>How the numbers are used</b><ul class="mut" style="margin:6px 0 0;padding-left:18px"><li>The win rate shown is Blizzard’s official one at your rank. Picks are ranked on that rate weighted by how often the hero is played, so a rarely picked hero with a lucky rate can’t jump to the top.</li><li>The selected map adds a bonus: the hero’s win rate on that map minus its all-maps rate, weighted the same way using its pick rate there.</li><li>Heroes under 1% pick rate are left out of picks and bans.</li><li>Every hero you have played gets an experience bonus: up to +1.5 for familiarity (all game modes, scaled by games played), plus or minus a share of how your ranked win rate compares with the official rate at your rank, once you have 20+ ranked games on it. ★ Main only labels your 3 most-played heroes per role; it never changes a score.</li><li>With no hero ticked, bans are the strongest, most-played heroes for your rank and this map (win rate at your rank plus the map bonus, multiplied by how often the hero is played). Tick “Play” on a pick and the ranking also adds half of how strongly each hero counters that hero (Counterwatch’s rating), so you are protected without ignoring what helps the team.</li><li>Perk percentages are community votes, not match results.</li></ul></div>
-<div class="rl" style="margin-top:10px"><button class="b p" data-a="refresh">Refresh now</button></div>`)}
+`)}
 const tagBox=`<input id="tagin" value="${esc(P.tag)}" placeholder="Name#12345" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="BattleTag" style="flex:1;min-width:130px">`;
 if(S.modal==='profile'&&!P.tag)return sheet(`<div class="row"><h2 class="nm">Connect your profile</h2>${xbtn}</div><p>Picks and bans use official stats only until you connect a BattleTag.</p>
 <div class="rl" style="margin:8px 0">${tagBox}<button class="b p" data-a="connect">Connect</button></div><div class="mut">Your Career Profile must be set to Public in Overwatch (Options → Social). Your BattleTag is remembered on this device only.</div>`);
@@ -277,13 +288,11 @@ insp:v=>{const[t,i]=v.split(':');const d=t==='pick'?recommend()[+i]:bansCalc()[+
 resync:()=>{syncProfile()},
 connect:()=>{const t=parseTag((document.getElementById('tagin')||{}).value);if(!t){toast('Enter your BattleTag as Name#12345.');return}
 if(t!==S.prof.tag){clearSynced();S.prof.tag=t;S.ps={st:'checking',msg:'Checking…'}}save();syncProfile()},
-disconnect:()=>{clearSynced();S.prof.tag='';S.ps={st:'none',msg:'No BattleTag is connected on this device.'};save()},
-refresh:()=>{loadAll(true)}};
-async function loadAll(bust){
+disconnect:()=>{clearSynced();S.prof.tag='';S.ps={st:'none',msg:'No BattleTag is connected on this device.'};save()},};
+async function loadAll(){
 if(S.busy)return;S.busy=true;render();
-await Promise.all([loadMeta(bust),loadLive()]);
-rebuild();defaults();S.busy=false;S.loaded=true;render();
-if(bust)toast(D?'Data reloaded ('+ago(Date.parse(D.updated))+').':'No data file found. Run the Update data workflow first.')}
+await Promise.all([loadMeta(),loadLive()]);
+rebuild();defaults();S.busy=false;S.loaded=true;render()}
 // ---------- profile (live from OverFast) ----------
 const OFP=OF+'/players/';
 function toDiv(d){d=String(d||'');if(!d)return null;const x=((D&&D.divisions)||[]).find(v=>v.key!=='all'&&(nk(v.key)===nk(d)||nk(v.label)===nk(d)));return x?x.key:null}
@@ -317,7 +326,7 @@ S.ps={st:'public',msg:'Public profile synced ('+now+'): '+n+' heroes played (ran
 // ---------- events ----------
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&S.modal){S.modal=null;render()}else if(e.key==='Enter'&&e.target.id==='tagin'){A.connect();render()}});
 document.addEventListener('click',e=>{const t=e.target.closest('[data-a]');if(!t)return;if(t.classList.contains('mo')&&e.target!==t)return;
-const a=t.dataset.a;if(!A[a])return;e.stopPropagation();const sc=document.querySelector('.sh')?.scrollTop;A[a](t.dataset.v);if(a!=='refresh'){render();const sh=document.querySelector('.sh');if(sh&&sc&&S.modal)sh.scrollTop=sc}});
+const a=t.dataset.a;if(!A[a])return;e.stopPropagation();const sc=document.querySelector('.sh')?.scrollTop;A[a](t.dataset.v);render();const sh=document.querySelector('.sh');if(sh&&sc&&S.modal)sh.scrollTop=sc});
 document.addEventListener('input',e=>{const t=e.target;
 if(t.id==='mq'){S.q=t.value;document.getElementById('maplist').innerHTML=mapList()}
 });
