@@ -32,7 +32,15 @@ jobs:
           git add data/meta.json
           if git diff --staged --quiet; then
             echo "No changes to save"
-          else
-            git commit -m "Update data"
-            git push
+            exit 0
           fi
+          git commit -m "Update data"
+          # If you pushed something else while this run was going, pull it in and try again
+          for attempt in 1 2 3 4; do
+            if git push; then exit 0; fi
+            echo "Push rejected (attempt $attempt); pulling the latest changes and retrying"
+            git pull --rebase
+            sleep 5
+          done
+          echo "::error::Could not push the data file after 4 attempts"
+          exit 1
